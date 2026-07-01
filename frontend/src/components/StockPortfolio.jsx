@@ -105,25 +105,32 @@ export default function StockPortfolio() {
         currentPrice: parseFloat(formData.currentPrice) || 0,
         dividendYield: parseFloat(formData.dividendYield) || 0,
       };
-      await stocksAPI.create(dataToSend);
-      await loadPositions();
+      const newPosition = await stocksAPI.create(dataToSend);
+      // Ajout optimiste local
+      setPositions(prevPositions => [...prevPositions, newPosition.position || newPosition]);
       await loadSummary();
       setShowAddModal(false);
       resetForm();
     } catch (error) {
       console.error('Erreur création position:', error);
       alert('Erreur lors de la création de la position');
+      // Recharger en cas d'erreur
+      await loadPositions();
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (position) => {
     if (!confirm('Supprimer cette position ?')) return;
     try {
-      await stocksAPI.delete(id);
-      await loadPositions();
+      const positionId = position.id || position._id;
+      // Suppression optimiste locale
+      setPositions(prevPositions => prevPositions.filter(p => (p.id || p._id) !== positionId));
+      await stocksAPI.delete(positionId);
       await loadSummary();
     } catch (error) {
       console.error('Erreur suppression:', error);
+      // Recharger en cas d'erreur
+      await loadPositions();
     }
   };
 
@@ -307,7 +314,7 @@ export default function StockPortfolio() {
                       </td>
                       <td className="py-3">
                         <button
-                          onClick={() => handleDelete(position._id)}
+                          onClick={() => handleDelete(position)}
                           className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-500/20 hover:text-rose-400"
                         >
                           <Trash2 size={16} />

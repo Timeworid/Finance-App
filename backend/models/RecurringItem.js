@@ -37,7 +37,7 @@ const recurringItemSchema = new mongoose.Schema({
       'salaire', 'prime', 'allocation', 'pension', 'investissement', 'autre_revenu',
       // Charges
       'logement', 'energie', 'internet', 'telephone', 'assurance', 'transport',
-      'abonnement_streaming', 'abonnement_presse', 'abonnement_sport', 'autre_charge',
+      'abonnements', 'autre_charge',
     ],
     required: true,
   },
@@ -89,7 +89,12 @@ recurringItemSchema.pre('save', function() {
 
 // Méthodes utilitaires
 recurringItemSchema.methods.getAnnualAmount = function() {
-  const amount = parseFloat(this.amount) || 0;
+  // Déchiffrer le montant si nécessaire
+  let amountValue = this.amount;
+  if (String(amountValue).includes(':')) {
+    amountValue = decryptNumber(amountValue);
+  }
+  const amount = parseFloat(amountValue) || 0;
 
   switch (this.frequency) {
     case 'weekly':
@@ -112,6 +117,7 @@ recurringItemSchema.methods.getMonthlyAmount = function() {
 // Mapper _id vers id pour le frontend ET déchiffrer
 recurringItemSchema.set('toJSON', {
   versionKey: false,
+  virtuals: true,
   transform: function(doc, ret) {
     ret.id = ret._id.toString();
     delete ret._id;
@@ -120,6 +126,8 @@ recurringItemSchema.set('toJSON', {
     if (ret.amount && String(ret.amount).includes(':')) {
       ret.amount = decryptNumber(ret.amount);
     }
+
+    return ret;
   }
 });
 

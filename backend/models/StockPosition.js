@@ -103,7 +103,12 @@ stockPositionSchema.methods.getTotalValue = function() {
 };
 
 stockPositionSchema.methods.getTotalCost = function() {
-  const avgPrice = parseFloat(this.averageBuyPrice) || 0;
+  // Déchiffrer le prix si nécessaire
+  let avgPriceValue = this.averageBuyPrice;
+  if (String(avgPriceValue).includes(':')) {
+    avgPriceValue = decryptNumber(avgPriceValue);
+  }
+  const avgPrice = parseFloat(avgPriceValue) || 0;
   return this.quantity * avgPrice;
 };
 
@@ -120,6 +125,7 @@ stockPositionSchema.methods.getProfitLossPercentage = function() {
 // Mapper _id vers id pour le frontend ET déchiffrer
 stockPositionSchema.set('toJSON', {
   versionKey: false,
+  virtuals: true,
   transform: function(doc, ret) {
     ret.id = ret._id.toString();
     delete ret._id;
@@ -128,6 +134,8 @@ stockPositionSchema.set('toJSON', {
     if (ret.averageBuyPrice && String(ret.averageBuyPrice).includes(':')) {
       ret.averageBuyPrice = decryptNumber(ret.averageBuyPrice);
     }
+
+    return ret;
   }
 });
 

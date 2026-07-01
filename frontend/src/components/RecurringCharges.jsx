@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, TrendingUp, TrendingDown, Calendar, Repeat, X } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, TrendingDown, Calendar, Repeat, X, Edit2 } from 'lucide-react';
 import { recurringAPI } from '../services/api';
 
 const FREQUENCIES = {
@@ -25,9 +25,7 @@ const CATEGORIES = {
     { label: 'Téléphone', value: 'telephone' },
     { label: 'Assurance', value: 'assurance' },
     { label: 'Transport', value: 'transport' },
-    { label: 'Abonnement streaming', value: 'abonnement_streaming' },
-    { label: 'Abonnement presse', value: 'abonnement_presse' },
-    { label: 'Abonnement sport', value: 'abonnement_sport' },
+    { label: 'Abonnements', value: 'abonnements' },
     { label: 'Autre charge', value: 'autre_charge' },
   ],
 };
@@ -88,6 +86,7 @@ export default function RecurringCharges() {
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
@@ -131,39 +130,86 @@ export default function RecurringCharges() {
         ...formData,
         amount: parseFloat(formData.amount),
       };
-      await recurringAPI.create(dataToSend);
-      await loadItems();
+
+      if (editingItem) {
+        // Modification
+        const itemId = editingItem.id || editingItem._id;
+        const response = await recurringAPI.update(itemId, dataToSend);
+        const updatedItem = response.item || response;
+        // Mise à jour optimiste locale
+        setItems(prevItems =>
+          prevItems.map(i =>
+            (i.id || i._id) === itemId ? updatedItem : i
+          )
+        );
+      } else {
+        // Création
+        const response = await recurringAPI.create(dataToSend);
+        const newItem = response.item || response;
+        // Ajout optimiste local
+        setItems(prevItems => [...prevItems, newItem]);
+      }
+
       await loadSummary();
       setShowAddModal(false);
       resetForm();
     } catch (error) {
-      console.error('Erreur création élément:', error);
-      alert('Erreur lors de la création');
+      console.error('Erreur sauvegarde élément:', error);
+      alert('Erreur lors de la sauvegarde');
+      // Recharger en cas d'erreur
+      await loadItems();
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (item) => {
     if (!confirm('Supprimer cet élément récurrent ?')) return;
     try {
-      await recurringAPI.delete(id);
-      await loadItems();
+      const itemId = item.id || item._id;
+      // Suppression optimiste locale
+      setItems(prevItems => prevItems.filter(i => (i.id || i._id) !== itemId));
+      await recurringAPI.delete(itemId);
       await loadSummary();
     } catch (error) {
       console.error('Erreur suppression:', error);
+      // Recharger en cas d'erreur
+      await loadItems();
     }
   };
 
   const toggleActive = async (item) => {
     try {
-      await recurringAPI.update(item._id, { isActive: !item.isActive });
-      await loadItems();
+      const itemId = item.id || item._id;
+      // Mise à jour optimiste locale
+      setItems(prevItems =>
+        prevItems.map(i =>
+          (i.id || i._id) === itemId ? { ...i, isActive: !i.isActive } : i
+        )
+      );
+      await recurringAPI.update(itemId, { isActive: !item.isActive });
       await loadSummary();
     } catch (error) {
       console.error('Erreur mise à jour:', error);
+      // Recharger en cas d'erreur
+      await loadItems();
     }
   };
 
+  const openEditModal = (item) => {
+    setEditingItem(item);
+    setFormData({
+      name: item.name || '',
+      type: item.type || 'charge',
+      amount: item.amount?.toString() || '',
+      frequency: item.frequency || 'monthly',
+      category: item.category || '',
+      startDate: item.startDate ? new Date(item.startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      isActive: item.isActive !== undefined ? item.isActive : true,
+    });
+    setShowAddModal(true);
+  };
+
   const resetForm = () => {
+    setEditingItem(null);
     setFormData({
       name: '',
       type: 'charge',
@@ -289,13 +335,20 @@ export default function RecurringCharges() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => openEditModal(item)}
+                      className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-teal-500/20 hover:text-teal-400"
+                      title="Modifier"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
                       onClick={() => toggleActive(item)}
                       className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-800"
                     >
                       {item.isActive ? 'Désactiver' : 'Activer'}
                     </button>
                     <button
-                      onClick={() => handleDelete(item._id)}
+                      onClick={() => handleDelete(item)}
                       className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-500/20 hover:text-rose-400"
                     >
                       <Trash2 size={16} />
@@ -342,13 +395,20 @@ export default function RecurringCharges() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => openEditModal(item)}
+                      className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-teal-500/20 hover:text-teal-400"
+                      title="Modifier"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button
                       onClick={() => toggleActive(item)}
                       className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-800"
                     >
                       {item.isActive ? 'Désactiver' : 'Activer'}
                     </button>
                     <button
-                      onClick={() => handleDelete(item._id)}
+                      onClick={() => handleDelete(item)}
                       className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-500/20 hover:text-rose-400"
                     >
                       <Trash2 size={16} />
@@ -363,7 +423,7 @@ export default function RecurringCharges() {
 
       {/* Add Modal */}
       {showAddModal && (
-        <Modal title="Ajouter un élément récurrent" onClose={() => { setShowAddModal(false); resetForm(); }}>
+        <Modal title={editingItem ? "Modifier l'élément récurrent" : "Ajouter un élément récurrent"} onClose={() => { setShowAddModal(false); resetForm(); }}>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-300">Type</label>

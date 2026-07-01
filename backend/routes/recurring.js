@@ -45,7 +45,7 @@ router.post('/',
     body('category').isIn([
       'salaire', 'prime', 'allocation', 'pension', 'investissement', 'autre_revenu',
       'logement', 'energie', 'internet', 'telephone', 'assurance', 'transport',
-      'abonnement_streaming', 'abonnement_presse', 'abonnement_sport', 'autre_charge',
+      'abonnements', 'autre_charge',
     ]).withMessage('Catégorie invalide'),
   ],
   async (req, res) => {
