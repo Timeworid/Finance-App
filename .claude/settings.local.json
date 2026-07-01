@@ -13,7 +13,9 @@
       "Bash(npm run dev:*)",
       "Bash(jq:*)",
       "Bash(chmod:*)",
-      "Bash(/home/alex/Documents/VSCodium/Finance-App/scripts/health-check.sh:*)"
+      "Bash(/home/alex/Documents/VSCodium/Finance-App/scripts/health-check.sh:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)"
     ]
   }
 }

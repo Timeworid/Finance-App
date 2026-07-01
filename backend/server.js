@@ -69,6 +69,9 @@ app.use('/api/transactions', require('./routes/transactions'));
 app.use('/api/categories', require('./routes/categories'));
 app.use('/api/envelopes', require('./routes/envelopes'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/investments', require('./routes/investments'));
+app.use('/api/recurring', require('./routes/recurring'));
+app.use('/api/stocks', require('./routes/stocks'));
 
 // Route de santé
 app.get('/health', (req, res) => {

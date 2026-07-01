@@ -25,7 +25,12 @@ import {
   Upload, Download, Plus, Trash2, Wallet, ArrowUpRight, ArrowDownRight,
   PiggyBank, Settings as SettingsIcon, X, Check, AlertTriangle, RotateCcw,
   FileDown, Database, Target, Percent, Calendar, ChevronLeft, ChevronRight, Layers,
+  LogOut, User, Repeat, TrendingDown, Newspaper, Building2,
 } from "lucide-react";
+
+import InvestmentProducts from "./components/InvestmentProducts";
+import RecurringCharges from "./components/RecurringCharges";
+import StockPortfolio from "./components/StockPortfolio";
 
 /* ===========================================================================
  * 1. PALETTE & FORMATTERS
@@ -1594,6 +1599,9 @@ const NAV = [
   { id: "transactions", label: "Transactions", icon: Receipt },
   { id: "categories", label: "Catégories", icon: Tags },
   { id: "envelopes", label: "Enveloppes", icon: Landmark },
+  { id: "investments", label: "Investissements", icon: Building2 },
+  { id: "recurring", label: "Charges Récurrentes", icon: Repeat },
+  { id: "stocks", label: "Bourse & ETF", icon: TrendingUp },
   { id: "simulators", label: "Simulateurs", icon: Calculator },
 ];
 
@@ -1638,18 +1646,48 @@ export default function FinancePilot() {
     reader.readAsText(file);
   }, []);
 
+  // Récupérer les infos utilisateur depuis localStorage
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const userEmail = user.email || 'Utilisateur';
+
+  // Fonction de déconnexion
+  const handleLogout = () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col lg:flex-row">
         {/* --- Navigation latérale (devient barre supérieure sur mobile) --- */}
         <aside className="border-b border-slate-800 lg:w-60 lg:border-b-0 lg:border-r">
-          <div className="flex items-center gap-2 px-5 py-5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500 text-slate-950">
-              <Wallet size={20} />
+          <div className="px-5 py-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500 text-slate-950">
+                <Wallet size={20} />
+              </div>
+              <div>
+                <div className="text-sm font-semibold leading-tight">FinancePilot</div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">Pilotage sécurisé</div>
+              </div>
             </div>
-            <div>
-              <div className="text-sm font-semibold leading-tight">FinancePilot</div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Pilotage 100 % local</div>
+            {/* Profil utilisateur */}
+            <div className="flex items-center gap-2 rounded-lg bg-slate-900/50 px-3 py-2 border border-slate-800">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-500/20 text-teal-400">
+                <User size={16} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium text-slate-300 truncate">{userEmail}</div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-rose-400 transition"
+                title="Déconnexion"
+              >
+                <LogOut size={14} />
+              </button>
             </div>
           </div>
           <nav className="flex gap-1 overflow-x-auto px-3 pb-2 lg:flex-col lg:pb-0">
@@ -1682,6 +1720,9 @@ export default function FinancePilot() {
                 {view === "transactions" && "Saisie, import de relevés et historique"}
                 {view === "categories" && "Catégories, budgets et règles d'auto-classement"}
                 {view === "envelopes" && "Tes comptes, ton plan d'épargne mensuel et la projection long terme"}
+                {view === "investments" && "Gestion de tes produits bancaires : LEP, PEL, PEA, Assurance Vie, etc."}
+                {view === "recurring" && "Suivi de tes revenus et charges récurrents mensuels/annuels"}
+                {view === "stocks" && "Portefeuille d'actions, ETF et cryptomonnaies"}
                 {view === "simulators" && "Projections d'épargne et simulation d'emprunt"}
               </p>
             </div>
@@ -1696,6 +1737,9 @@ export default function FinancePilot() {
               {view === "transactions" && <Transactions state={state} dispatch={dispatch} />}
               {view === "categories" && <Categories state={state} dispatch={dispatch} />}
               {view === "envelopes" && <Envelopes state={state} dispatch={dispatch} />}
+              {view === "investments" && <InvestmentProducts />}
+              {view === "recurring" && <RecurringCharges />}
+              {view === "stocks" && <StockPortfolio />}
               {view === "simulators" && <Simulators />}
             </>
           )}

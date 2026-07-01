@@ -242,4 +242,106 @@ export const settingsAPI = {
   },
 };
 
+// ========== INVESTMENTS API ==========
+
+export const investmentsAPI = {
+  getAll: async () => {
+    const { data } = await api.get('/investments');
+    return data;
+  },
+
+  getById: async (id) => {
+    const { data } = await api.get(`/investments/${id}`);
+    return data;
+  },
+
+  create: async (productData) => {
+    const { data } = await api.post('/investments', productData);
+    return data;
+  },
+
+  update: async (id, productData) => {
+    const { data } = await api.put(`/investments/${id}`, productData);
+    return data;
+  },
+
+  delete: async (id) => {
+    const { data } = await api.delete(`/investments/${id}`);
+    return data;
+  },
+
+  getProjection: async (id, years = 10) => {
+    const { data } = await api.get(`/investments/${id}/projection`, { params: { years } });
+    return data;
+  },
+
+  getSummary: async () => {
+    const { data } = await api.get('/investments/summary/all');
+    return data;
+  },
+};
+
+// ========== RECURRING ITEMS API ==========
+
+export const recurringAPI = {
+  getAll: async (params = {}) => {
+    const { data } = await api.get('/recurring', { params });
+    return data;
+  },
+
+  create: async (itemData) => {
+    const { data } = await api.post('/recurring', itemData);
+    return data;
+  },
+
+  update: async (id, itemData) => {
+    const { data } = await api.put(`/recurring/${id}`, itemData);
+    return data;
+  },
+
+  delete: async (id) => {
+    const { data } = await api.delete(`/recurring/${id}`);
+    return data;
+  },
+
+  getSummary: async () => {
+    const { data } = await api.get('/recurring/summary/all');
+    return data;
+  },
+};
+
+// ========== STOCKS API ==========
+
+export const stocksAPI = {
+  getAll: async (params = {}) => {
+    const { data } = await api.get('/stocks', { params });
+    return data;
+  },
+
+  create: async (positionData) => {
+    const { data } = await api.post('/stocks', positionData);
+    return data;
+  },
+
+  update: async (id, positionData) => {
+    const { data } = await api.put(`/stocks/${id}`, positionData);
+    return data;
+  },
+
+  delete: async (id) => {
+    const { data } = await api.delete(`/stocks/${id}`);
+    return data;
+  },
+
+  getPortfolioSummary: async () => {
+    const { data } = await api.get('/stocks/portfolio/summary');
+    return data;
+  },
+
+  updatePrices: async (updates) => {
+    const { data } = await api.post('/stocks/prices/update', { updates });
+    return data;
+  },
+};
+
 export default api;
