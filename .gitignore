@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.docker
+!.env.example
+!.env.production.example
+!.env.docker.example
+
+# Build outputs
+dist/
+build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MongoDB
+*.db
+data/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+backup/
+backups/
+*.bak
+
+# Docker volumes
+docker-data/
+
+# SSL certificates
+*.pem
+*.crt
+*.key
+ssl/
+
+# Production secrets
+secrets/

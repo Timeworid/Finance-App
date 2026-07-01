@@ -1,0 +1,44 @@
+# Dockerfile pour le frontend FinancePilot
+FROM node:18-alpine AS builder
+
+# Métadonnées
+LABEL maintainer="FinancePilot Team"
+LABEL description="Frontend for FinancePilot - Secure Personal Finance Management"
+
+WORKDIR /app
+
+# Copier les fichiers de dépendances
+COPY frontend/package*.json ./
+
+# Installer les dépendances
+RUN npm ci && npm cache clean --force
+
+# Copier le code source
+COPY frontend/ ./
+
+# Build de production
+RUN npm run build
+
+# --- Stage de production avec Nginx ---
+FROM nginx:alpine
+
+# Copier la configuration Nginx
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copier les fichiers buildés
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copier un script d'injection des variables d'environnement
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Exposer le port 80
+EXPOSE 80
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
+
+# Point d'entrée
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

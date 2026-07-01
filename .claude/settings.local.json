@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install express mongoose jsonwebtoken bcrypt helmet cors express-rate-limit express-validator dotenv cookie-parser joi)",
+      "Bash(npm install:*)",
+      "Bash(node -e:*)",
+      "Bash(npm init:*)",
+      "Bash(pkill:*)",
+      "Bash(cd:*)",
+      "Bash(curl:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm run dev:*)",
+      "Bash(jq:*)",
+      "Bash(chmod:*)",
+      "Bash(/home/alex/Documents/VSCodium/Finance-App/scripts/health-check.sh:*)"
+    ]
+  }
+}

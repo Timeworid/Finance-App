@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Build outputs
+dist/
+build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# MongoDB
+*.db
+data/
+
+# Logs
+logs/
+*.log
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+backup/
+backups/
+*.bak
+
+# Documentation (sauf production)
+*.md
+!README.md
+
+# Scripts de développement
+scripts/
+test/
+docs/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore

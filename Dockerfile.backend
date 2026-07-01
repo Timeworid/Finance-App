@@ -1,0 +1,52 @@
+# Dockerfile pour le backend FinancePilot
+FROM node:18-alpine AS builder
+
+# Métadonnées
+LABEL maintainer="FinancePilot Team"
+LABEL description="Backend API for FinancePilot - Secure Personal Finance Management"
+
+# Installer les dépendances système nécessaires pour bcrypt
+RUN apk add --no-cache python3 make g++
+
+# Répertoire de travail
+WORKDIR /app
+
+# Copier les fichiers de dépendances
+COPY backend/package*.json ./
+
+# Installer les dépendances de production
+RUN npm ci --only=production && npm cache clean --force
+
+# Copier le code source
+COPY backend/ ./
+
+# Créer le dossier logs
+RUN mkdir -p logs
+
+# --- Stage de production ---
+FROM node:18-alpine
+
+# Installer dumb-init pour gérer les signaux proprement
+RUN apk add --no-cache dumb-init
+
+# Créer un utilisateur non-root
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+
+WORKDIR /app
+
+# Copier depuis le builder
+COPY --from=builder --chown=nodejs:nodejs /app ./
+
+# Exposer le port
+EXPOSE 5000
+
+# Utiliser l'utilisateur non-root
+USER nodejs
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
+# Démarrer avec dumb-init pour gérer les signaux
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "server.js"]
