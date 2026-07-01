@@ -11,25 +11,31 @@ const FREQUENCIES = {
 
 const CATEGORIES = {
   revenue: [
-    'Salaire',
-    'Revenus locatifs',
-    'Dividendes',
-    'Allocations',
-    'Freelance',
-    'Autre',
+    { label: 'Salaire', value: 'salaire' },
+    { label: 'Prime', value: 'prime' },
+    { label: 'Allocations', value: 'allocation' },
+    { label: 'Pension', value: 'pension' },
+    { label: 'Investissement', value: 'investissement' },
+    { label: 'Autre revenu', value: 'autre_revenu' },
   ],
   charge: [
-    'Loyer',
-    'Électricité',
-    'Gaz',
-    'Eau',
-    'Internet',
-    'Téléphone',
-    'Assurances',
-    'Transports',
-    'Abonnements',
-    'Autre',
+    { label: 'Logement', value: 'logement' },
+    { label: 'Énergie', value: 'energie' },
+    { label: 'Internet', value: 'internet' },
+    { label: 'Téléphone', value: 'telephone' },
+    { label: 'Assurance', value: 'assurance' },
+    { label: 'Transport', value: 'transport' },
+    { label: 'Abonnement streaming', value: 'abonnement_streaming' },
+    { label: 'Abonnement presse', value: 'abonnement_presse' },
+    { label: 'Abonnement sport', value: 'abonnement_sport' },
+    { label: 'Autre charge', value: 'autre_charge' },
   ],
+};
+
+// Helper function to get label from category value
+const getCategoryLabel = (categoryValue, type) => {
+  const category = CATEGORIES[type]?.find(cat => cat.value === categoryValue);
+  return category ? category.label : categoryValue;
 };
 
 function Modal({ title, onClose, children }) {
@@ -278,7 +284,7 @@ export default function RecurringCharges() {
                       <span>•</span>
                       <span>{FREQUENCIES[item.frequency].label}</span>
                       <span>•</span>
-                      <span>{item.category}</span>
+                      <span>{getCategoryLabel(item.category, item.type)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -331,7 +337,7 @@ export default function RecurringCharges() {
                       <span>•</span>
                       <span>{FREQUENCIES[item.frequency].label}</span>
                       <span>•</span>
-                      <span>{item.category}</span>
+                      <span>{getCategoryLabel(item.category, item.type)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -442,8 +448,8 @@ export default function RecurringCharges() {
               >
                 <option value="">Sélectionner une catégorie</option>
                 {CATEGORIES[formData.type].map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
+                  <option key={cat.value} value={cat.value}>
+                    {cat.label}
                   </option>
                 ))}
               </select>

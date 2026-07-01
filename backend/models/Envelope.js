@@ -69,27 +69,19 @@ envelopeSchema.pre('save', function() {
   }
 });
 
-// Déchiffrement après lecture
-envelopeSchema.post('find', function(docs) {
-  if (Array.isArray(docs)) {
-    docs.forEach(doc => {
-      if (doc.balance && String(doc.balance).includes(':')) {
-        doc.balance = decryptNumber(doc.balance);
-      }
-      if (doc.monthly && String(doc.monthly).includes(':')) {
-        doc.monthly = decryptNumber(doc.monthly);
-      }
-    });
-  }
-});
+// Mapper _id vers id pour le frontend ET déchiffrer les champs sensibles
+envelopeSchema.set('toJSON', {
+  versionKey: false,
+  transform: function(doc, ret) {
+    ret.id = ret._id.toString();
+    delete ret._id;
 
-envelopeSchema.post('findOne', function(doc) {
-  if (doc) {
-    if (doc.balance && String(doc.balance).includes(':')) {
-      doc.balance = decryptNumber(doc.balance);
+    // Déchiffrer balance et monthly pour le JSON
+    if (ret.balance && String(ret.balance).includes(':')) {
+      ret.balance = decryptNumber(ret.balance);
     }
-    if (doc.monthly && String(doc.monthly).includes(':')) {
-      doc.monthly = decryptNumber(doc.monthly);
+    if (ret.monthly && String(ret.monthly).includes(':')) {
+      ret.monthly = decryptNumber(ret.monthly);
     }
   }
 });

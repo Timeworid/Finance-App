@@ -47,14 +47,19 @@ settingsSchema.pre('save', function() {
   this.updatedAt = new Date();
 });
 
-// Déchiffrement après lecture
-settingsSchema.post('findOne', function(doc) {
-  if (doc) {
-    if (doc.startBalance && String(doc.startBalance).includes(':')) {
-      doc.startBalance = decryptNumber(doc.startBalance);
+// Mapper _id vers id pour le frontend ET déchiffrer les champs sensibles
+settingsSchema.set('toJSON', {
+  versionKey: false,
+  transform: function(doc, ret) {
+    ret.id = ret._id.toString();
+    delete ret._id;
+
+    // Déchiffrer les champs pour le JSON
+    if (ret.startBalance && String(ret.startBalance).includes(':')) {
+      ret.startBalance = decryptNumber(ret.startBalance);
     }
-    if (doc.monthlyCapacity && String(doc.monthlyCapacity).includes(':')) {
-      doc.monthlyCapacity = decryptNumber(doc.monthlyCapacity);
+    if (ret.monthlyCapacity && String(ret.monthlyCapacity).includes(':')) {
+      ret.monthlyCapacity = decryptNumber(ret.monthlyCapacity);
     }
   }
 });

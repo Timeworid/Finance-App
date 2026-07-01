@@ -42,7 +42,11 @@ router.post('/',
     body('type').isIn(['revenue', 'charge']).withMessage('Type invalide'),
     body('amount').isNumeric().withMessage('Le montant doit être un nombre'),
     body('frequency').isIn(['weekly', 'monthly', 'quarterly', 'yearly']).withMessage('Fréquence invalide'),
-    body('category').notEmpty().withMessage('La catégorie est requise'),
+    body('category').isIn([
+      'salaire', 'prime', 'allocation', 'pension', 'investissement', 'autre_revenu',
+      'logement', 'energie', 'internet', 'telephone', 'assurance', 'transport',
+      'abonnement_streaming', 'abonnement_presse', 'abonnement_sport', 'autre_charge',
+    ]).withMessage('Catégorie invalide'),
   ],
   async (req, res) => {
     const errors = validationResult(req);

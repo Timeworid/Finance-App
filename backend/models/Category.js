@@ -57,4 +57,13 @@ categorySchema.pre('save', function() {
   }
 });
 
+// Mapper _id vers id pour le frontend
+categorySchema.set('toJSON', {
+  versionKey: false,
+  transform: function(doc, ret) {
+    ret.id = ret._id.toString();
+    delete ret._id;
+  }
+});
+
 module.exports = mongoose.model('Category', categorySchema);

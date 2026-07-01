@@ -63,13 +63,16 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Ne pas renvoyer le mot de passe dans les réponses JSON
-userSchema.methods.toJSON = function() {
-  const obj = this.toObject();
-  delete obj.password;
-  delete obj.refreshTokens;
-  return obj;
-};
+// Ne pas renvoyer le mot de passe dans les réponses JSON et mapper _id vers id
+userSchema.set('toJSON', {
+  versionKey: false,
+  transform: function(doc, ret) {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.password;
+    delete ret.refreshTokens;
+  }
+});
 
 // Limite le nombre de refresh tokens à 5 (FIFO)
 userSchema.methods.addRefreshToken = function(token) {

@@ -171,6 +171,56 @@ router.post('/batch', importLimiter, validate(transactionBatchSchema), async (re
 });
 
 /**
+ * PUT /api/transactions/:id
+ * Modifier une transaction
+ */
+router.put('/:id', writeLimiter, async (req, res) => {
+  try {
+    const transaction = await Transaction.findOne({
+      _id: req.params.id,
+      userId: req.user.userId,
+    });
+
+    if (!transaction) {
+      return res.status(404).json({
+        error: 'Transaction non trouvée',
+      });
+    }
+
+    // Vérifier que la catégorie appartient à l'utilisateur si fournie
+    if (req.body.category) {
+      const cat = await Category.findOne({ _id: req.body.category, userId: req.user.userId });
+      if (!cat) {
+        return res.status(400).json({
+          error: 'Catégorie invalide ou non autorisée',
+        });
+      }
+    }
+
+    // Mettre à jour les champs autorisés
+    if (req.body.date !== undefined) transaction.date = new Date(req.body.date);
+    if (req.body.label !== undefined) transaction.label = req.body.label;
+    if (req.body.amount !== undefined) transaction.amount = req.body.amount;
+    if (req.body.category !== undefined) transaction.category = req.body.category || null;
+
+    await transaction.save();
+
+    // Populate category avant de renvoyer
+    await transaction.populate('category', 'name color type');
+
+    res.json({
+      message: 'Transaction mise à jour',
+      transaction,
+    });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de la transaction:', error);
+    res.status(500).json({
+      error: 'Erreur lors de la mise à jour de la transaction',
+    });
+  }
+});
+
+/**
  * DELETE /api/transactions/:id
  * Supprimer une transaction
  */

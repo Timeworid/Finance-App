@@ -15,7 +15,18 @@
       "Bash(chmod:*)",
       "Bash(/home/alex/Documents/VSCodium/Finance-App/scripts/health-check.sh:*)",
       "Bash(lsof:*)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "Bash(killall node:*)",
+      "Bash(killall:*)",
+      "Bash(netstat:*)",
+      "Read(//home/alex/Documents/VSCodium/Finance-App/**)",
+      "Bash(ss:*)",
+      "Bash(systemctl status:*)",
+      "Bash(ls:*)",
+      "Bash(node /tmp/create_user.js:*)",
+      "Bash(mongosh financepilot:*)",
+      "Bash(./stop.sh:*)",
+      "Bash(./start.sh)"
     ]
   }
 }

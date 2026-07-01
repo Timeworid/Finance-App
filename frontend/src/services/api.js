@@ -117,7 +117,7 @@ export const transactionsAPI = {
    */
   getAll: async (params = {}) => {
     const { data } = await api.get('/transactions', { params });
-    return data;
+    return data.transactions || [];
   },
 
   /**
@@ -125,7 +125,7 @@ export const transactionsAPI = {
    */
   create: async (transaction) => {
     const { data } = await api.post('/transactions', transaction);
-    return data;
+    return data.transaction;
   },
 
   /**
@@ -134,6 +134,14 @@ export const transactionsAPI = {
   batchCreate: async (transactions) => {
     const { data } = await api.post('/transactions/batch', { transactions });
     return data;
+  },
+
+  /**
+   * Modifier une transaction
+   */
+  update: async (id, updates) => {
+    const { data } = await api.put(`/transactions/${id}`, updates);
+    return data.transaction;
   },
 
   /**
@@ -160,7 +168,7 @@ export const categoriesAPI = {
    */
   getAll: async () => {
     const { data } = await api.get('/categories');
-    return data;
+    return data.categories || [];
   },
 
   /**
@@ -168,7 +176,7 @@ export const categoriesAPI = {
    */
   create: async (category) => {
     const { data } = await api.post('/categories', category);
-    return data;
+    return data.category;
   },
 
   /**
@@ -176,7 +184,7 @@ export const categoriesAPI = {
    */
   update: async (id, updates) => {
     const { data } = await api.put(`/categories/${id}`, updates);
-    return data;
+    return data.category;
   },
 
   /**
@@ -195,7 +203,7 @@ export const envelopesAPI = {
    */
   getAll: async () => {
     const { data } = await api.get('/envelopes');
-    return data;
+    return data.envelopes || [];
   },
 
   /**
@@ -203,7 +211,7 @@ export const envelopesAPI = {
    */
   create: async (envelope) => {
     const { data } = await api.post('/envelopes', envelope);
-    return data;
+    return data.envelope;
   },
 
   /**
@@ -211,7 +219,7 @@ export const envelopesAPI = {
    */
   update: async (id, updates) => {
     const { data } = await api.put(`/envelopes/${id}`, updates);
-    return data;
+    return data.envelope;
   },
 
   /**
@@ -230,7 +238,7 @@ export const settingsAPI = {
    */
   get: async () => {
     const { data } = await api.get('/settings');
-    return data;
+    return data.settings || { startBalance: 0, monthlyCapacity: 1000 };
   },
 
   /**
@@ -238,45 +246,6 @@ export const settingsAPI = {
    */
   update: async (settings) => {
     const { data } = await api.put('/settings', settings);
-    return data;
-  },
-};
-
-// ========== INVESTMENTS API ==========
-
-export const investmentsAPI = {
-  getAll: async () => {
-    const { data } = await api.get('/investments');
-    return data;
-  },
-
-  getById: async (id) => {
-    const { data } = await api.get(`/investments/${id}`);
-    return data;
-  },
-
-  create: async (productData) => {
-    const { data } = await api.post('/investments', productData);
-    return data;
-  },
-
-  update: async (id, productData) => {
-    const { data } = await api.put(`/investments/${id}`, productData);
-    return data;
-  },
-
-  delete: async (id) => {
-    const { data } = await api.delete(`/investments/${id}`);
-    return data;
-  },
-
-  getProjection: async (id, years = 10) => {
-    const { data } = await api.get(`/investments/${id}/projection`, { params: { years } });
-    return data;
-  },
-
-  getSummary: async () => {
-    const { data } = await api.get('/investments/summary/all');
     return data;
   },
 };
@@ -310,6 +279,29 @@ export const recurringAPI = {
   },
 };
 
+// ========== ASSETS API ==========
+
+export const assetsAPI = {
+  getAll: async () => {
+    const { data } = await api.get('/assets');
+    return data;
+  },
+
+  create: async (assetData) => {
+    const { data } = await api.post('/assets', assetData);
+    return data;
+  },
+
+  update: async (id, assetData) => {
+    const { data } = await api.put(`/assets/${id}`, assetData);
+    return data;
+  },
+
+  delete: async (id) => {
+    await api.delete(`/assets/${id}`);
+  },
+};
+
 // ========== STOCKS API ==========
 
 export const stocksAPI = {
@@ -330,6 +322,11 @@ export const stocksAPI = {
 
   delete: async (id) => {
     const { data } = await api.delete(`/stocks/${id}`);
+    return data;
+  },
+
+  getSummary: async () => {
+    const { data } = await api.get('/stocks/portfolio/summary');
     return data;
   },
 

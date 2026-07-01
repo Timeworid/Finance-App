@@ -264,6 +264,12 @@ const validate = (schema) => {
         message: detail.message,
       }));
 
+      // Log pour debug
+      console.error('Validation error:', {
+        body: req.body,
+        errors: errors,
+      });
+
       return res.status(400).json({
         error: 'Erreur de validation',
         details: errors,

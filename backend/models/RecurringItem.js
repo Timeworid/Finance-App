@@ -87,25 +87,6 @@ recurringItemSchema.pre('save', function() {
   }
 });
 
-// Déchiffrement après lecture
-recurringItemSchema.post('find', function(docs) {
-  if (Array.isArray(docs)) {
-    docs.forEach(doc => {
-      if (doc.amount && String(doc.amount).includes(':')) {
-        doc.amount = decryptNumber(doc.amount);
-      }
-    });
-  }
-});
-
-recurringItemSchema.post('findOne', function(doc) {
-  if (doc) {
-    if (doc.amount && String(doc.amount).includes(':')) {
-      doc.amount = decryptNumber(doc.amount);
-    }
-  }
-});
-
 // Méthodes utilitaires
 recurringItemSchema.methods.getAnnualAmount = function() {
   const amount = parseFloat(this.amount) || 0;
@@ -127,5 +108,19 @@ recurringItemSchema.methods.getAnnualAmount = function() {
 recurringItemSchema.methods.getMonthlyAmount = function() {
   return this.getAnnualAmount() / 12;
 };
+
+// Mapper _id vers id pour le frontend ET déchiffrer
+recurringItemSchema.set('toJSON', {
+  versionKey: false,
+  transform: function(doc, ret) {
+    ret.id = ret._id.toString();
+    delete ret._id;
+
+    // Déchiffrer amount pour le JSON
+    if (ret.amount && String(ret.amount).includes(':')) {
+      ret.amount = decryptNumber(ret.amount);
+    }
+  }
+});
 
 module.exports = mongoose.model('RecurringItem', recurringItemSchema);

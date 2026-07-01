@@ -97,25 +97,6 @@ stockPositionSchema.pre('save', function() {
   }
 });
 
-// Déchiffrement après lecture
-stockPositionSchema.post('find', function(docs) {
-  if (Array.isArray(docs)) {
-    docs.forEach(doc => {
-      if (doc.averageBuyPrice && String(doc.averageBuyPrice).includes(':')) {
-        doc.averageBuyPrice = decryptNumber(doc.averageBuyPrice);
-      }
-    });
-  }
-});
-
-stockPositionSchema.post('findOne', function(doc) {
-  if (doc) {
-    if (doc.averageBuyPrice && String(doc.averageBuyPrice).includes(':')) {
-      doc.averageBuyPrice = decryptNumber(doc.averageBuyPrice);
-    }
-  }
-});
-
 // Méthodes utilitaires
 stockPositionSchema.methods.getTotalValue = function() {
   return this.quantity * this.currentPrice;
@@ -135,5 +116,19 @@ stockPositionSchema.methods.getProfitLossPercentage = function() {
   if (cost === 0) return 0;
   return ((this.getProfitLoss() / cost) * 100).toFixed(2);
 };
+
+// Mapper _id vers id pour le frontend ET déchiffrer
+stockPositionSchema.set('toJSON', {
+  versionKey: false,
+  transform: function(doc, ret) {
+    ret.id = ret._id.toString();
+    delete ret._id;
+
+    // Déchiffrer averageBuyPrice pour le JSON
+    if (ret.averageBuyPrice && String(ret.averageBuyPrice).includes(':')) {
+      ret.averageBuyPrice = decryptNumber(ret.averageBuyPrice);
+    }
+  }
+});
 
 module.exports = mongoose.model('StockPosition', stockPositionSchema);

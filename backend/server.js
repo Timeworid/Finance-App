@@ -25,9 +25,21 @@ app.use(helmet({
   },
 }));
 
-// CORS configuré
+// CORS configuré - Support des ports 3000, 3001, 3002
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Autoriser les requêtes sans origin (Postman, etc.) en dev
+    if (!origin && process.env.NODE_ENV === 'development') return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 }));
 
@@ -52,13 +64,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rate limiting global
+// Rate limiting global - plus permissif en développement
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requêtes par IP
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // 1000 en dev, 100 en prod
   message: 'Trop de requêtes depuis cette IP, veuillez réessayer plus tard.',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'GET' && process.env.NODE_ENV === 'development', // Skip GET en dev
 });
 
 app.use('/api/', globalLimiter);
@@ -69,7 +82,7 @@ app.use('/api/transactions', require('./routes/transactions'));
 app.use('/api/categories', require('./routes/categories'));
 app.use('/api/envelopes', require('./routes/envelopes'));
 app.use('/api/settings', require('./routes/settings'));
-app.use('/api/investments', require('./routes/investments'));
+app.use('/api/assets', require('./routes/assets'));
 app.use('/api/recurring', require('./routes/recurring'));
 app.use('/api/stocks', require('./routes/stocks'));
 

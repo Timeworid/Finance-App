@@ -55,38 +55,28 @@ transactionSchema.pre('save', function() {
   }
 });
 
-// Déchiffrement après lecture
-transactionSchema.post('find', function(docs) {
-  if (Array.isArray(docs)) {
-    docs.forEach(doc => {
-      if (doc.label && doc.label.includes(':')) {
-        doc.label = decrypt(doc.label);
-      }
-      if (doc.amount && String(doc.amount).includes(':')) {
-        doc.amount = decryptNumber(doc.amount);
-      }
-    });
-  }
-});
-
-transactionSchema.post('findOne', function(doc) {
-  if (doc) {
-    if (doc.label && doc.label.includes(':')) {
-      doc.label = decrypt(doc.label);
-    }
-    if (doc.amount && String(doc.amount).includes(':')) {
-      doc.amount = decryptNumber(doc.amount);
-    }
-  }
-});
-
 // Virtual pour obtenir la date au format ISO (pour le frontend)
 transactionSchema.virtual('dateISO').get(function() {
   return this.date ? this.date.toISOString().slice(0, 10) : null;
 });
 
-// Inclure les virtuals dans les conversions JSON
-transactionSchema.set('toJSON', { virtuals: true });
+// Inclure les virtuals dans les conversions JSON, mapper _id vers id ET déchiffrer
+transactionSchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: function(doc, ret) {
+    ret.id = ret._id.toString();
+    delete ret._id;
+
+    // Déchiffrer label et amount pour le JSON
+    if (ret.label && ret.label.includes(':')) {
+      ret.label = decrypt(ret.label);
+    }
+    if (ret.amount && String(ret.amount).includes(':')) {
+      ret.amount = decryptNumber(ret.amount);
+    }
+  }
+});
 transactionSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

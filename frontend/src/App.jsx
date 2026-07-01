@@ -25,12 +25,21 @@ import {
   Upload, Download, Plus, Trash2, Wallet, ArrowUpRight, ArrowDownRight,
   PiggyBank, Settings as SettingsIcon, X, Check, AlertTriangle, RotateCcw,
   FileDown, Database, Target, Percent, Calendar, ChevronLeft, ChevronRight, Layers,
-  LogOut, User, Repeat, TrendingDown, Newspaper, Building2,
+  LogOut, User, Repeat, TrendingDown, Newspaper, Building2, Sun, Moon,
 } from "lucide-react";
 
-import InvestmentProducts from "./components/InvestmentProducts";
 import RecurringCharges from "./components/RecurringCharges";
 import StockPortfolio from "./components/StockPortfolio";
+import AssetsProperties from "./components/AssetsProperties";
+import { useTheme } from "./context/ThemeContext";
+import { useToast } from "./components/Toast";
+import {
+  transactionsAPI,
+  categoriesAPI,
+  envelopesAPI,
+  settingsAPI,
+  stocksAPI
+} from "./services/api";
 
 /* ===========================================================================
  * 1. PALETTE & FORMATTERS
@@ -305,6 +314,8 @@ function reducer(state, action) {
       return action.payload;
     case "ADD_TX":
       return { ...state, transactions: [action.tx, ...state.transactions] };
+    case "UPDATE_TX":
+      return { ...state, transactions: state.transactions.map((t) => (t.id === action.tx.id ? action.tx : t)) };
     case "DELETE_TX":
       return { ...state, transactions: state.transactions.filter((t) => t.id !== action.id) };
     case "IMPORT_TX":
@@ -431,7 +442,7 @@ const PERIODS = [
   { label: "1 an", months: 12 }, { label: "5 ans", months: 60 }, { label: "Tout", months: 0 },
 ];
 
-function Dashboard({ state }) {
+function Dashboard({ state, investmentProducts = [], stockPositions = [], loadingInvestments = false }) {
   const { transactions, categories, envelopes, startBalance } = state;
   const catById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
 
@@ -472,12 +483,18 @@ function Dashboard({ state }) {
   const balanceSeries = useMemo(() => visible.map((m) => ({ mois: m.mois, solde: m.solde })), [visible]);
   const monthlyFlows = useMemo(() => visible.map((m) => ({ mois: m.mois, Revenus: m.income, Dépenses: m.expense })), [visible]);
 
-  // Patrimoine = solde du mois analysé + valeur des enveloppes.
+  // Patrimoine = solde du mois analysé + valeur des enveloppes + bourse.
   const portfolio = useMemo(() => envelopes.reduce((s, e) => s + (e.balance || 0), 0), [envelopes]);
+  const stocksTotal = useMemo(() => {
+    if (!Array.isArray(stockPositions)) return 0;
+    return stockPositions.reduce((s, p) => s + (p.quantity * p.currentPrice || 0), 0);
+  }, [stockPositions]);
   const kpis = {
     balance: cur.solde, income: cur.income, expense: cur.expense, net: cur.net,
     savingsRate: cur.income > 0 ? cur.net / cur.income : 0,
-    patrimoine: cur.solde + portfolio, portfolio,
+    patrimoine: cur.solde + portfolio + stocksTotal,
+    portfolio,
+    stocksTotal,
   };
 
   // Répartition des dépenses du mois analysé.
@@ -563,6 +580,7 @@ function Dashboard({ state }) {
           <div className="mt-3 space-y-1.5 text-sm">
             <div className="flex justify-between"><span className="text-slate-400">Comptes courants</span><span className="tabular-nums text-slate-200">{fmtEur(kpis.balance)}</span></div>
             <div className="flex justify-between"><span className="text-slate-400">Enveloppes</span><span className="tabular-nums text-teal-400">{fmtEur(kpis.portfolio)}</span></div>
+            {kpis.stocksTotal > 0 && <div className="flex justify-between"><span className="text-slate-400">Bourse & ETF</span><span className="tabular-nums text-violet-400">{fmtEur(kpis.stocksTotal)}</span></div>}
           </div>
         </Card>
 
@@ -720,32 +738,48 @@ function Empty({ msg }) {
  * 8. VUE — TRANSACTIONS (+ import CSV)
  * ===========================================================================*/
 
-function Transactions({ state, dispatch }) {
+function Transactions({ state, dispatch, toast }) {
   const { transactions, categories } = state;
   const catById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
 
   const [filter, setFilter] = useState(""); // recherche libellé
   const [catFilter, setCatFilter] = useState("all");
+  const [startDate, setStartDate] = useState(""); // date de début pour le filtre
+  const [endDate, setEndDate] = useState(""); // date de fin pour le filtre
   const [importing, setImporting] = useState(false);
 
   // Formulaire d'ajout rapide.
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), label: "", amount: "", category: categories[0]?.id || "", sign: "depense" });
 
-  const addTx = useCallback(() => {
+  const addTx = useCallback(async () => {
     const amt = parseAmount(form.amount);
-    if (!form.label.trim() || Number.isNaN(amt)) return;
+    if (!form.label.trim()) {
+      toast?.error("Le libellé est requis");
+      return;
+    }
+    if (Number.isNaN(amt)) {
+      toast?.error("Montant invalide");
+      return;
+    }
     const signed = form.sign === "depense" ? -Math.abs(amt) : Math.abs(amt);
-    dispatch({ type: "ADD_TX", tx: { id: uid(), date: form.date, label: form.label.trim(), amount: signed, category: form.category || null } });
-    setForm((f) => ({ ...f, label: "", amount: "" }));
-  }, [form, dispatch]);
+    try {
+      await dispatch({ type: "ADD_TX", tx: { id: uid(), date: form.date, label: form.label.trim(), amount: signed, category: form.category || null } });
+      setForm((f) => ({ ...f, label: "", amount: "" }));
+      toast?.success("Transaction ajoutée");
+    } catch (error) {
+      // L'erreur est déjà gérée dans apiDispatch
+    }
+  }, [form, dispatch, toast]);
 
   const filtered = useMemo(() => {
     const q = filter.toLowerCase();
     return transactions
       .filter((t) => (catFilter === "all" ? true : t.category === (catFilter === "none" ? null : catFilter)))
       .filter((t) => !q || (t.label || "").toLowerCase().includes(q))
+      .filter((t) => !startDate || t.date >= startDate)
+      .filter((t) => !endDate || t.date <= endDate)
       .slice(0, 400); // borne d'affichage pour rester fluide
-  }, [transactions, filter, catFilter]);
+  }, [transactions, filter, catFilter, startDate, endDate]);
 
   return (
     <div className="space-y-5">
@@ -758,7 +792,7 @@ function Transactions({ state, dispatch }) {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
           <Field label="Date"><input type="date" className={inputCls} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
           <Field label="Libellé"><input className={inputCls} placeholder="Ex : Courses Lidl" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /></Field>
-          <Field label="Montant"><input className={inputCls} inputMode="decimal" placeholder="0,00" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
+          <Field label="Montant"><input className={inputCls} inputMode="decimal" placeholder="Montant" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
           <Field label="Sens">
             <select className={inputCls} value={form.sign} onChange={(e) => setForm({ ...form, sign: e.target.value })}>
               <option value="depense">Dépense</option>
@@ -784,6 +818,35 @@ function Transactions({ state, dispatch }) {
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             <option value="none">Non classé</option>
           </select>
+          <div className="flex items-center gap-2">
+            <Calendar size={15} className="text-slate-500" />
+            <input
+              type="date"
+              className={`${inputCls} w-[140px]`}
+              placeholder="Du"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              title="Date de début"
+            />
+            <span className="text-xs text-slate-500">à</span>
+            <input
+              type="date"
+              className={`${inputCls} w-[140px]`}
+              placeholder="Au"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              title="Date de fin"
+            />
+            {(startDate || endDate) && (
+              <button
+                onClick={() => { setStartDate(""); setEndDate(""); }}
+                className="text-slate-500 hover:text-slate-300 transition"
+                title="Réinitialiser les dates"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
           <span className="text-xs text-slate-500">{filtered.length} ligne(s)</span>
         </div>
 
@@ -997,30 +1060,45 @@ function ImportModal({ state, dispatch, onClose }) {
  * 9. VUE — CATÉGORIES
  * ===========================================================================*/
 
-function Categories({ state, dispatch }) {
+function Categories({ state, dispatch, toast }) {
   const { categories, transactions } = state;
+  const [startDate, setStartDate] = useState(""); // date de début pour le filtre
+  const [endDate, setEndDate] = useState(""); // date de fin pour le filtre
 
-  // Dépenses cumulées par catégorie (tous mois) pour le suivi de budget mensuel moyen.
+  // Dépenses cumulées par catégorie (avec filtre de date si appliqué)
   const spentByCat = useMemo(() => {
-    const months = new Set(transactions.map((t) => monthKey(t.date)).filter(Boolean)).size || 1;
+    const filteredTx = transactions.filter((t) => {
+      if (startDate && t.date < startDate) return false;
+      if (endDate && t.date > endDate) return false;
+      return true;
+    });
+    const months = new Set(filteredTx.map((t) => monthKey(t.date)).filter(Boolean)).size || 1;
     const sums = {};
-    transactions.forEach((t) => { if (t.amount < 0 && t.category) sums[t.category] = (sums[t.category] || 0) + -t.amount; });
+    filteredTx.forEach((t) => { if (t.amount < 0 && t.category) sums[t.category] = (sums[t.category] || 0) + -t.amount; });
     const avg = {};
     Object.keys(sums).forEach((k) => (avg[k] = sums[k] / months));
     return avg;
-  }, [transactions]);
+  }, [transactions, startDate, endDate]);
 
   const [draft, setDraft] = useState({ name: "", type: "depense", budget: "", color: SWATCHES[0], keywords: "" });
 
-  const add = useCallback(() => {
-    if (!draft.name.trim()) return;
-    dispatch({ type: "ADD_CAT", cat: {
-      id: uid(), name: draft.name.trim(), type: draft.type, color: draft.color,
-      budget: parseAmount(draft.budget) || 0,
-      keywords: draft.keywords.split(",").map((k) => k.trim()).filter(Boolean),
-    }});
-    setDraft({ name: "", type: "depense", budget: "", color: SWATCHES[(SWATCHES.indexOf(draft.color) + 1) % SWATCHES.length], keywords: "" });
-  }, [draft, dispatch]);
+  const add = useCallback(async () => {
+    if (!draft.name.trim()) {
+      toast?.error("Le nom de la catégorie est requis");
+      return;
+    }
+    try {
+      await dispatch({ type: "ADD_CAT", cat: {
+        id: uid(), name: draft.name.trim(), type: draft.type, color: draft.color,
+        budget: parseAmount(draft.budget) || 0,
+        keywords: draft.keywords.split(",").map((k) => k.trim()).filter(Boolean),
+      }});
+      setDraft({ name: "", type: "depense", budget: "", color: SWATCHES[(SWATCHES.indexOf(draft.color) + 1) % SWATCHES.length], keywords: "" });
+      toast?.success("Catégorie créée");
+    } catch (error) {
+      // Erreur déjà gérée
+    }
+  }, [draft, dispatch, toast]);
 
   return (
     <div className="space-y-5">
@@ -1044,6 +1122,45 @@ function Categories({ state, dispatch }) {
           </Field>
           <Field label="Mots-clés (virgule)"><input className={inputCls} value={draft.keywords} onChange={(e) => setDraft({ ...draft, keywords: e.target.value })} placeholder="netflix, spotify" /></Field>
           <div className="flex items-end"><Btn className="w-full" onClick={add}><Plus size={15} /> Créer</Btn></div>
+        </div>
+      </Card>
+
+      {/* Filtre de période */}
+      <Card>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-slate-300">Filtrer par période</span>
+          <div className="flex items-center gap-2">
+            <Calendar size={15} className="text-slate-500" />
+            <input
+              type="date"
+              className={`${inputCls} w-[140px]`}
+              placeholder="Du"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              title="Date de début"
+            />
+            <span className="text-xs text-slate-500">à</span>
+            <input
+              type="date"
+              className={`${inputCls} w-[140px]`}
+              placeholder="Au"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              title="Date de fin"
+            />
+            {(startDate || endDate) && (
+              <button
+                onClick={() => { setStartDate(""); setEndDate(""); }}
+                className="text-slate-500 hover:text-slate-300 transition"
+                title="Réinitialiser les dates"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          <span className="text-xs text-slate-500 ml-auto">
+            {startDate || endDate ? "Période personnalisée" : "Toutes les transactions"}
+          </span>
         </div>
       </Card>
 
@@ -1135,7 +1252,7 @@ function projectEnvelopes(envelopes, years) {
 
 const ENV_TYPES = ["Sécurisé", "Mixte", "Actions", "Pilotée", "Retraite", "Immobilier", "Autre"];
 
-function Envelopes({ state, dispatch }) {
+function Envelopes({ state, dispatch, toast }) {
   const { envelopes, monthlyCapacity } = state;
   const [horizon, setHorizon] = useState(20);
 
@@ -1599,7 +1716,7 @@ const NAV = [
   { id: "transactions", label: "Transactions", icon: Receipt },
   { id: "categories", label: "Catégories", icon: Tags },
   { id: "envelopes", label: "Enveloppes", icon: Landmark },
-  { id: "investments", label: "Investissements", icon: Building2 },
+  { id: "assets", label: "Biens & Propriétés", icon: Building2 },
   { id: "recurring", label: "Charges Récurrentes", icon: Repeat },
   { id: "stocks", label: "Bourse & ETF", icon: TrendingUp },
   { id: "simulators", label: "Simulateurs", icon: Calculator },
@@ -1611,28 +1728,152 @@ export default function FinancePilot() {
   const [ready, setReady] = useState(false);
   const [showData, setShowData] = useState(false);
   const jsonRef = useRef(null);
+  const { theme, toggleTheme } = useTheme();
+  const toast = useToast();
+  const [stockPositions, setStockPositions] = useState([]);
 
-  // Chargement initial depuis le stockage local (une seule fois).
+  // Chargement initial depuis l'API backend
   useEffect(() => {
     let alive = true;
+    let hasLoaded = false;
+
     (async () => {
-      const r = await Store.get(STORAGE_KEY);
-      if (alive && r?.value) {
-        try { dispatch({ type: "LOAD", payload: normalizeState(JSON.parse(r.value)) }); } catch { /* état par défaut conservé */ }
+      if (hasLoaded) return;
+      hasLoaded = true;
+
+      try {
+        // Charger toutes les données en parallèle
+        const [transactions, categories, envelopes, settings] = await Promise.all([
+          transactionsAPI.getAll(),
+          categoriesAPI.getAll(),
+          envelopesAPI.getAll(),
+          settingsAPI.get(),
+        ]);
+
+        if (alive) {
+          dispatch({
+            type: "LOAD",
+            payload: {
+              transactions: transactions || [],
+              categories: categories || [],
+              envelopes: envelopes || [],
+              startBalance: settings?.startBalance || 0,
+              monthlyCapacity: settings?.monthlyCapacity || 1000,
+              seeded: true,
+            },
+          });
+          setReady(true);
+          if (toast) toast.success("Données chargées");
+        }
+      } catch (error) {
+        console.error('Erreur chargement données:', error);
+        if (toast && error.response?.status !== 429) {
+          toast.error("Erreur de chargement des données");
+        }
+        // En cas d'erreur, utiliser l'état par défaut
+        if (alive) {
+          setReady(true);
+        }
       }
-      if (alive) setReady(true);
     })();
     return () => { alive = false; };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persistance « debouncée » : on n'écrit qu'après 400 ms d'inactivité.
-  const saveTimer = useRef(null);
+  // Wrapper du dispatch qui appelle l'API backend
+  const apiDispatch = useCallback(async (action) => {
+    try {
+      switch (action.type) {
+        case "ADD_TX":
+          const newTx = await transactionsAPI.create({
+            date: action.tx.date,
+            label: action.tx.label,
+            amount: action.tx.amount,
+            category: action.tx.category,
+          });
+          dispatch({ type: "ADD_TX", tx: newTx });
+          break;
+
+        case "UPDATE_TX":
+          const updatedTx = await transactionsAPI.update(action.tx.id, {
+            date: action.tx.date,
+            label: action.tx.label,
+            amount: action.tx.amount,
+            category: action.tx.category,
+          });
+          dispatch({ type: "UPDATE_TX", tx: updatedTx });
+          break;
+
+        case "DELETE_TX":
+          await transactionsAPI.delete(action.id);
+          dispatch(action);
+          break;
+
+        case "ADD_CAT":
+          const newCat = await categoriesAPI.create(action.cat);
+          dispatch({ type: "ADD_CAT", cat: newCat });
+          break;
+
+        case "UPDATE_CAT":
+          const updatedCat = await categoriesAPI.update(action.cat.id, action.cat);
+          dispatch({ type: "UPDATE_CAT", cat: updatedCat });
+          break;
+
+        case "DELETE_CAT":
+          await categoriesAPI.delete(action.id);
+          dispatch(action);
+          break;
+
+        case "ADD_ENV":
+          const newEnv = await envelopesAPI.create(action.env);
+          dispatch({ type: "ADD_ENV", env: newEnv });
+          break;
+
+        case "UPDATE_ENV":
+          const updatedEnv = await envelopesAPI.update(action.env.id, action.env);
+          dispatch({ type: "UPDATE_ENV", env: updatedEnv });
+          break;
+
+        case "DELETE_ENV":
+          await envelopesAPI.delete(action.id);
+          dispatch(action);
+          break;
+
+        case "SET_CAPACITY":
+        case "SET_START":
+          await settingsAPI.update({
+            startBalance: action.type === "SET_START" ? action.value : undefined,
+            monthlyCapacity: action.type === "SET_CAPACITY" ? action.value : undefined,
+          });
+          dispatch(action);
+          break;
+
+        default:
+          // Pour les autres actions (LOAD, etc.), juste dispatch local
+          dispatch(action);
+      }
+    } catch (error) {
+      console.error('API Error:', error);
+      toast?.error(`Erreur: ${error.response?.data?.message || error.message}`);
+      throw error;
+    }
+  }, [toast]);
+
+  // Chargement des positions boursières depuis l'API
   useEffect(() => {
-    if (!ready) return; // ne pas écraser le stockage avant le 1er chargement
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { Store.set(STORAGE_KEY, JSON.stringify(state)); }, 400);
-    return () => clearTimeout(saveTimer.current);
-  }, [state, ready]);
+    const fetchStockData = async () => {
+      try {
+        const stocks = await stocksAPI.getAll();
+        setStockPositions(stocks || []);
+      } catch (error) {
+        console.error('Error fetching stock data:', error);
+        setStockPositions([]);
+      }
+    };
+
+    if (ready) {
+      fetchStockData();
+    }
+  }, [ready]);
 
   // Import d'une sauvegarde JSON complète.
   const importJSON = useCallback((file) => {
@@ -1682,6 +1923,13 @@ export default function FinancePilot() {
                 <div className="text-xs font-medium text-slate-300 truncate">{userEmail}</div>
               </div>
               <button
+                onClick={toggleTheme}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-amber-400 transition"
+                title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+              >
+                {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+              </button>
+              <button
                 onClick={handleLogout}
                 className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-rose-400 transition"
                 title="Déconnexion"
@@ -1720,7 +1968,7 @@ export default function FinancePilot() {
                 {view === "transactions" && "Saisie, import de relevés et historique"}
                 {view === "categories" && "Catégories, budgets et règles d'auto-classement"}
                 {view === "envelopes" && "Tes comptes, ton plan d'épargne mensuel et la projection long terme"}
-                {view === "investments" && "Gestion de tes produits bancaires : LEP, PEL, PEA, Assurance Vie, etc."}
+                {view === "assets" && "Inventaire de tes biens physiques : voiture, immobilier, matériel, etc."}
                 {view === "recurring" && "Suivi de tes revenus et charges récurrents mensuels/annuels"}
                 {view === "stocks" && "Portefeuille d'actions, ETF et cryptomonnaies"}
                 {view === "simulators" && "Projections d'épargne et simulation d'emprunt"}
@@ -1733,11 +1981,11 @@ export default function FinancePilot() {
             <div className="flex h-64 items-center justify-center text-slate-600">Chargement…</div>
           ) : (
             <>
-              {view === "dashboard" && <Dashboard state={state} />}
-              {view === "transactions" && <Transactions state={state} dispatch={dispatch} />}
-              {view === "categories" && <Categories state={state} dispatch={dispatch} />}
-              {view === "envelopes" && <Envelopes state={state} dispatch={dispatch} />}
-              {view === "investments" && <InvestmentProducts />}
+              {view === "dashboard" && <Dashboard state={state} stockPositions={stockPositions} />}
+              {view === "transactions" && <Transactions state={state} dispatch={apiDispatch} toast={toast} />}
+              {view === "categories" && <Categories state={state} dispatch={apiDispatch} toast={toast} />}
+              {view === "envelopes" && <Envelopes state={state} dispatch={apiDispatch} toast={toast} />}
+              {view === "assets" && <AssetsProperties />}
               {view === "recurring" && <RecurringCharges />}
               {view === "stocks" && <StockPortfolio />}
               {view === "simulators" && <Simulators />}
