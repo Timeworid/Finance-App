@@ -45,9 +45,9 @@ const stockPositionSchema = new mongoose.Schema({
     enum: ['EUR', 'USD', 'GBP'],
   },
   account: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'InvestmentProduct', // Lié à un PEA, Compte titres, etc.
-    default: null,
+    type: String, // Nom du compte (PEA, Compte titres, etc.)
+    trim: true,
+    default: '',
   },
   sector: {
     type: String,

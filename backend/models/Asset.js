@@ -77,6 +77,7 @@ assetSchema.pre('save', function() {
 // Mapper _id vers id pour le frontend ET déchiffrer
 assetSchema.set('toJSON', {
   versionKey: false,
+  virtuals: true,
   transform: function(doc, ret) {
     ret.id = ret._id.toString();
     delete ret._id;
@@ -88,6 +89,8 @@ assetSchema.set('toJSON', {
     if (ret.currentValue && String(ret.currentValue).includes(':')) {
       ret.currentValue = decryptNumber(ret.currentValue);
     }
+
+    return ret;
   }
 });
 

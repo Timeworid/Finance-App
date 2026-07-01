@@ -284,7 +284,7 @@ export const recurringAPI = {
 export const assetsAPI = {
   getAll: async () => {
     const { data } = await api.get('/assets');
-    return data;
+    return Array.isArray(data) ? data : [];
   },
 
   create: async (assetData) => {
@@ -298,7 +298,8 @@ export const assetsAPI = {
   },
 
   delete: async (id) => {
-    await api.delete(`/assets/${id}`);
+    const { data } = await api.delete(`/assets/${id}`);
+    return data;
   },
 };
 

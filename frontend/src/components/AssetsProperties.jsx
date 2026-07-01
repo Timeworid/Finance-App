@@ -48,7 +48,7 @@ function AssetsProperties() {
     purchaseDate: '',
     description: '',
   });
-  const { toast } = useToast();
+  const toast = useToast();
 
   useEffect(() => {
     loadAssets();
@@ -61,7 +61,7 @@ function AssetsProperties() {
       setAssets(data || []);
     } catch (error) {
       console.error('Error loading assets:', error);
-      toast('Erreur lors du chargement des biens', 'error');
+      toast.error('Erreur lors du chargement des biens');
     } finally {
       setLoading(false);
     }
@@ -71,29 +71,43 @@ function AssetsProperties() {
     e.preventDefault();
     try {
       if (editingAsset) {
-        await assetsAPI.update(editingAsset.id, form);
-        toast('Bien modifié avec succès', 'success');
+        const assetId = editingAsset.id || editingAsset._id;
+        const updatedAsset = await assetsAPI.update(assetId, form);
+        // Mise à jour optimiste locale
+        setAssets(prevAssets =>
+          prevAssets.map(asset =>
+            (asset.id || asset._id) === assetId ? updatedAsset : asset
+          )
+        );
+        toast.success('Bien modifié avec succès');
       } else {
-        await assetsAPI.create(form);
-        toast('Bien créé avec succès', 'success');
+        const newAsset = await assetsAPI.create(form);
+        // Ajout optimiste local
+        setAssets(prevAssets => [...prevAssets, newAsset]);
+        toast.success('Bien créé avec succès');
       }
-      await loadAssets();
       closeModal();
     } catch (error) {
       console.error('Error saving asset:', error);
-      toast('Erreur lors de la sauvegarde du bien', 'error');
+      toast.error('Erreur lors de la sauvegarde du bien');
+      // Recharger en cas d'erreur pour resynchroniser
+      await loadAssets();
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (asset) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce bien ?')) return;
     try {
-      await assetsAPI.delete(id);
-      toast('Bien supprimé avec succès', 'success');
-      await loadAssets();
+      const assetId = asset.id || asset._id;
+      // Suppression optimiste locale immédiate
+      setAssets(prevAssets => prevAssets.filter(a => (a.id || a._id) !== assetId));
+      await assetsAPI.delete(assetId);
+      toast.success('Bien supprimé avec succès');
     } catch (error) {
       console.error('Error deleting asset:', error);
-      toast('Erreur lors de la suppression du bien', 'error');
+      toast.error('Erreur lors de la suppression du bien');
+      // Recharger en cas d'erreur pour resynchroniser
+      await loadAssets();
     }
   };
 
@@ -175,8 +189,9 @@ function AssetsProperties() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {assets.map(asset => {
           const Icon = getCategoryIcon(asset.category);
+          const assetKey = asset.id || asset._id;
           return (
-            <Card key={asset.id} className="p-4">
+            <Card key={assetKey} className="p-4">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-slate-800 rounded-lg">
@@ -195,7 +210,7 @@ function AssetsProperties() {
                     <Edit2 size={16} />
                   </button>
                   <button
-                    onClick={() => handleDelete(asset.id)}
+                    onClick={() => handleDelete(asset)}
                     className="text-slate-400 hover:text-rose-400 transition-colors"
                   >
                     <Trash2 size={16} />
