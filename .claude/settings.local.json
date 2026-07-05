@@ -26,7 +26,14 @@
       "Bash(node /tmp/create_user.js:*)",
       "Bash(mongosh financepilot:*)",
       "Bash(./stop.sh:*)",
-      "Bash(./start.sh)"
+      "Bash(./start.sh)",
+      "Bash(npm outdated:*)",
+      "Bash(npm test)",
+      "Bash(node -c:*)",
+      "Bash(for file in models/*.js routes/*.js)",
+      "Bash(do node -c \"$file\")",
+      "Bash(echo:*)",
+      "Bash(done)"
     ]
   }
 }
