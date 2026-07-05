@@ -187,8 +187,8 @@ router.put('/:id', writeLimiter, async (req, res) => {
       });
     }
 
-    // Vérifier que la catégorie appartient à l'utilisateur si fournie
-    if (req.body.category) {
+    // Vérifier que la catégorie appartient à l'utilisateur si fournie et non vide
+    if (req.body.category && req.body.category !== '' && req.body.category !== null) {
       const cat = await Category.findOne({ _id: req.body.category, userId: req.user.userId });
       if (!cat) {
         return res.status(400).json({
@@ -201,7 +201,10 @@ router.put('/:id', writeLimiter, async (req, res) => {
     if (req.body.date !== undefined) transaction.date = new Date(req.body.date);
     if (req.body.label !== undefined) transaction.label = req.body.label;
     if (req.body.amount !== undefined) transaction.amount = req.body.amount;
-    if (req.body.category !== undefined) transaction.category = req.body.category || null;
+    if (req.body.category !== undefined) {
+      // Convertir chaîne vide en null
+      transaction.category = (req.body.category && req.body.category !== '') ? req.body.category : null;
+    }
 
     await transaction.save();
 

@@ -22,7 +22,7 @@ import {
 } from "recharts";
 import {
   LayoutDashboard, Receipt, Tags, TrendingUp, Calculator, Landmark,
-  Upload, Download, Plus, Trash2, Wallet, ArrowUpRight, ArrowDownRight,
+  Upload, Download, Plus, Trash2, Edit2, Wallet, ArrowUpRight, ArrowDownRight,
   PiggyBank, Settings as SettingsIcon, X, Check, AlertTriangle, RotateCcw,
   FileDown, Database, Target, Percent, Calendar, ChevronLeft, ChevronRight, Layers,
   LogOut, User, Repeat, TrendingDown, Newspaper, Building2, Sun, Moon,
@@ -747,6 +747,7 @@ function Transactions({ state, dispatch, toast }) {
   const [startDate, setStartDate] = useState(""); // date de début pour le filtre
   const [endDate, setEndDate] = useState(""); // date de fin pour le filtre
   const [importing, setImporting] = useState(false);
+  const [editingTx, setEditingTx] = useState(null); // transaction en cours d'édition
 
   // Formulaire d'ajout rapide.
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), label: "", amount: "", category: categories[0]?.id || "", sign: "depense" });
@@ -879,7 +880,10 @@ function Transactions({ state, dispatch, toast }) {
                     <td className={`py-2 pr-3 text-right font-medium tabular-nums ${t.amount >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                       {t.amount >= 0 ? "+" : ""}{fmtEur2(t.amount)}
                     </td>
-                    <td className="py-2 pl-3 text-right">
+                    <td className="py-2 pl-3 text-right flex items-center justify-end gap-1">
+                      <button onClick={() => setEditingTx(t)} className="text-slate-600 hover:text-teal-400" title="Modifier">
+                        <Edit2 size={15} />
+                      </button>
                       <button onClick={() => dispatch({ type: "DELETE_TX", id: t.id })} className="text-slate-600 hover:text-rose-400" title="Supprimer">
                         <Trash2 size={15} />
                       </button>
@@ -896,6 +900,135 @@ function Transactions({ state, dispatch, toast }) {
       </Card>
 
       {importing && <ImportModal state={state} dispatch={dispatch} onClose={() => setImporting(false)} />}
+
+      {/* Modal d'édition de transaction */}
+      {editingTx && (
+        <EditTransactionModal
+          transaction={editingTx}
+          categories={categories}
+          dispatch={dispatch}
+          toast={toast}
+          onClose={() => setEditingTx(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* --- Modale d'édition de transaction --- */
+function EditTransactionModal({ transaction, categories, dispatch, toast, onClose }) {
+  // Extraire l'ID de la catégorie (peut être un objet populé ou juste un ID)
+  const getCategoryId = (cat) => {
+    if (!cat) return "";
+    if (typeof cat === "string") return cat;
+    return cat.id || cat._id || "";
+  };
+
+  const [form, setForm] = useState({
+    date: transaction.date || new Date().toISOString().slice(0, 10),
+    label: transaction.label || "",
+    amount: Math.abs(transaction.amount).toString(),
+    category: getCategoryId(transaction.category),
+    sign: transaction.amount >= 0 ? "revenu" : "depense",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    const amt = parseAmount(form.amount);
+    if (!form.label.trim()) {
+      toast?.error("Le libellé est requis");
+      return;
+    }
+    if (Number.isNaN(amt)) {
+      toast?.error("Montant invalide");
+      return;
+    }
+    const signed = form.sign === "depense" ? -Math.abs(amt) : Math.abs(amt);
+
+    setSaving(true);
+    try {
+      await dispatch({
+        type: "UPDATE_TX",
+        tx: {
+          id: transaction.id,
+          date: form.date,
+          label: form.label.trim(),
+          amount: signed,
+          category: form.category || null
+        }
+      });
+      toast?.success("Transaction modifiée");
+      onClose();
+    } catch (error) {
+      toast?.error("Erreur lors de la modification");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-950 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+          <h3 className="text-lg font-semibold text-slate-200">Modifier la transaction</h3>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <Field label="Date">
+            <input
+              type="date"
+              className={inputCls}
+              value={form.date}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+            />
+          </Field>
+          <Field label="Libellé">
+            <input
+              className={inputCls}
+              placeholder="Ex : Courses Lidl"
+              value={form.label}
+              onChange={(e) => setForm({ ...form, label: e.target.value })}
+            />
+          </Field>
+          <Field label="Montant">
+            <input
+              className={inputCls}
+              inputMode="decimal"
+              placeholder="Montant"
+              value={form.amount}
+              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+            />
+          </Field>
+          <Field label="Type">
+            <select
+              className={inputCls}
+              value={form.sign}
+              onChange={(e) => setForm({ ...form, sign: e.target.value })}
+            >
+              <option value="depense">Dépense</option>
+              <option value="revenu">Revenu</option>
+            </select>
+          </Field>
+          <Field label="Catégorie">
+            <select
+              className={inputCls}
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+            >
+              <option value="">Non classé</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+          <div className="flex gap-3 pt-2">
+            <Btn variant="outline" className="flex-1" onClick={onClose}>Annuler</Btn>
+            <Btn className="flex-1" onClick={handleSave} disabled={saving}>
+              {saving ? "Enregistrement..." : "Enregistrer"}
+            </Btn>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

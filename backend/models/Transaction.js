@@ -75,6 +75,13 @@ transactionSchema.set('toJSON', {
     if (ret.amount && String(ret.amount).includes(':')) {
       ret.amount = decryptNumber(ret.amount);
     }
+
+    // Convertir la date au format YYYY-MM-DD pour le frontend
+    if (ret.date) {
+      ret.date = new Date(ret.date).toISOString().slice(0, 10);
+    }
+
+    return ret;
   }
 });
 transactionSchema.set('toObject', { virtuals: true });

@@ -127,6 +127,14 @@ recurringItemSchema.set('toJSON', {
       ret.amount = decryptNumber(ret.amount);
     }
 
+    // Convertir les dates au format YYYY-MM-DD pour le frontend
+    if (ret.startDate) {
+      ret.startDate = new Date(ret.startDate).toISOString().slice(0, 10);
+    }
+    if (ret.endDate) {
+      ret.endDate = new Date(ret.endDate).toISOString().slice(0, 10);
+    }
+
     return ret;
   }
 });

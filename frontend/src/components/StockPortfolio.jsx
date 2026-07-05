@@ -278,13 +278,14 @@ export default function StockPortfolio() {
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {positions.map((position) => {
+                  const positionId = position.id || position._id;
                   const totalValue = position.quantity * position.currentPrice;
                   const totalCost = position.quantity * parseFloat(position.averageBuyPrice);
                   const profitLoss = totalValue - totalCost;
                   const profitLossPercentage = totalCost > 0 ? ((profitLoss / totalCost) * 100).toFixed(2) : 0;
 
                   return (
-                    <tr key={position._id} className="text-sm">
+                    <tr key={positionId} className="text-sm">
                       <td className="py-3">
                         <div>
                           <div className="font-semibold text-slate-200">{position.symbol}</div>
