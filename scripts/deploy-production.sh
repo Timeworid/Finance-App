@@ -1,97 +1,44 @@
-#!/bin/bash
-# Script de déploiement production pour FinancePilot
-# Usage: ./scripts/deploy-production.sh
+#!/usr/bin/env bash
+# Déploiement production de FinancePilot avec Docker Compose (v2)
+# Usage : ./scripts/deploy-production.sh   (depuis la racine du projet)
 
-set -e
+set -euo pipefail
 
-echo "🚀 Déploiement de FinancePilot en production"
-echo "=============================================="
+ENV_FILE=".env.docker"
+COMPOSE=(docker compose --env-file "$ENV_FILE")
 
-# Vérifier que nous sommes à la racine du projet
-if [ ! -f "package.json" ]; then
-    echo "❌ Erreur: Exécutez ce script depuis la racine du projet"
-    exit 1
-fi
+echo "🚀 Déploiement de FinancePilot"
 
-# Vérifier que Docker est installé
-if ! command -v docker &> /dev/null; then
-    echo "❌ Erreur: Docker n'est pas installé"
-    exit 1
-fi
+# Pré-requis
+[ -f docker-compose.yml ] || { echo "❌ Lancez ce script depuis la racine du projet"; exit 1; }
+command -v docker >/dev/null || { echo "❌ Docker n'est pas installé"; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo "❌ Docker Compose v2 requis (docker compose)"; exit 1; }
+[ -f "$ENV_FILE" ] || { echo "❌ $ENV_FILE manquant : cp .env.docker.example $ENV_FILE puis renseignez les secrets"; exit 1; }
 
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ Erreur: Docker Compose n'est pas installé"
-    exit 1
-fi
+# Vérifie que les secrets obligatoires sont renseignés (le compose refuse sinon)
+"${COMPOSE[@]}" config -q
 
-# Vérifier que le fichier .env.docker existe
-if [ ! -f ".env.docker" ]; then
-    echo "❌ Erreur: Fichier .env.docker manquant"
-    echo "Copiez .env.docker.example et configurez les secrets"
-    exit 1
-fi
+echo "🔨 Build des images"
+"${COMPOSE[@]}" build --pull
 
-# Vérifier que les secrets sont configurés
-if grep -q "YOUR_.*_HERE" .env.docker; then
-    echo "⚠️  ATTENTION: Certains secrets ne sont pas configurés dans .env.docker"
-    echo "Voulez-vous continuer quand même? (y/N)"
-    read -r response
-    if [[ ! "$response" =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
-fi
+echo "📦 Démarrage (les containers existants sont recréés si nécessaire)"
+"${COMPOSE[@]}" up -d --wait --wait-timeout 180
+
+# shellcheck disable=SC1090
+HTTP_PORT="$(grep -E '^HTTP_PORT=' "$ENV_FILE" | cut -d= -f2)"
+BASE_URL="http://localhost:${HTTP_PORT:-80}"
+
+echo "🏥 Vérification"
+curl -fsS "$BASE_URL/health" >/dev/null && echo "✅ Frontend : OK"
+# 401 attendu sans authentification : prouve que nginx → backend → MongoDB répond
+code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/api/auth/me")
+if [ "$code" = "401" ]; then echo "✅ API : OK"; else echo "❌ API : HTTP $code"; "${COMPOSE[@]}" logs --tail 50 backend; exit 1; fi
 
 echo ""
-echo "📋 Étape 1/6: Arrêt des containers existants"
-docker-compose down || true
-
+echo "✅ Déploiement réussi : $BASE_URL"
+echo "   Logs     : docker compose logs -f"
+echo "   Arrêt    : docker compose down"
+echo "   Sauvegarde : ./scripts/backup-mongodb.sh"
 echo ""
-echo "🔨 Étape 2/6: Build des images Docker"
-docker-compose build --no-cache
-
-echo ""
-echo "📦 Étape 3/6: Démarrage des services"
-docker-compose --env-file .env.docker up -d
-
-echo ""
-echo "⏳ Étape 4/6: Attente du démarrage des services (30s)"
-sleep 30
-
-echo ""
-echo "🏥 Étape 5/6: Vérification de la santé des services"
-docker-compose ps
-
-# Vérifier le backend
-if curl -f http://localhost:5000/health > /dev/null 2>&1; then
-    echo "✅ Backend: OK"
-else
-    echo "❌ Backend: ERREUR"
-    docker-compose logs backend
-    exit 1
-fi
-
-# Vérifier le frontend
-if curl -f http://localhost/health > /dev/null 2>&1; then
-    echo "✅ Frontend: OK"
-else
-    echo "❌ Frontend: ERREUR"
-    docker-compose logs frontend
-    exit 1
-fi
-
-echo ""
-echo "📊 Étape 6/6: Affichage des logs"
-echo ""
-echo "✅ Déploiement réussi!"
-echo ""
-echo "🌐 Application disponible sur:"
-echo "   - Frontend: http://localhost"
-echo "   - Backend API: http://localhost:5000/api"
-echo "   - MongoDB: localhost:27017"
-echo ""
-echo "📝 Commandes utiles:"
-echo "   - Voir les logs: docker-compose logs -f"
-echo "   - Arrêter: docker-compose down"
-echo "   - Redémarrer: docker-compose restart"
-echo "   - Status: docker-compose ps"
-echo ""
+echo "ℹ️  Après une mise à jour depuis une ancienne version, chiffrez les données restées en clair :"
+echo "   docker compose exec backend node scripts/reencrypt-plaintext.js --dry-run"

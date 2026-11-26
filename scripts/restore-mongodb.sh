@@ -51,7 +51,7 @@ if docker ps | grep -q financepilot-mongodb; then
     docker cp "$TEMP_DIR/$(basename $BACKUP_FILE .tar.gz)" financepilot-mongodb:/tmp/restore
 
     # Restaurer
-    docker exec financepilot-mongodb mongorestore \
+    docker exec financepilot-mongodb sh -c 'exec mongorestore -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$@"' _ \
         --db "$DB_NAME" \
         --drop \
         --gzip \
@@ -75,7 +75,7 @@ echo "✅ Restauration terminée avec succès"
 echo ""
 echo "🔍 Vérification:"
 if docker ps | grep -q financepilot-mongodb; then
-    docker exec financepilot-mongodb mongosh --eval "db.getSiblingDB('$DB_NAME').stats()" --quiet
+    docker exec financepilot-mongodb sh -c 'exec mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$@"' _ --quiet --eval "printjson(db.getSiblingDB('$DB_NAME').stats())"
 else
     mongosh "$DB_NAME" --eval "db.stats()" --quiet
 fi

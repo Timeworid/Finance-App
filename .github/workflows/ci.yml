@@ -1,0 +1,70 @@
+# Intégration continue : lint + tests backend, lint + build frontend, build des images Docker
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      # Cache du binaire MongoDB téléchargé par mongodb-memory-server
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('backend/package-lock.json') }}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build des images
+        run: |
+          docker build -f Dockerfile.backend -t financepilot-backend:ci .
+          docker build -f Dockerfile.frontend -t financepilot-frontend:ci .
+      - name: Validation de docker-compose.yml
+        env:
+          MONGO_ROOT_PASSWORD: ci
+          MONGO_APP_PASSWORD: ci
+          JWT_SECRET: ci
+          JWT_REFRESH_SECRET: ci
+          ENCRYPTION_KEY: ci
+        run: docker compose config -q

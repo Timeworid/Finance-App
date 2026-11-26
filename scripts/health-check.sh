@@ -99,8 +99,10 @@ check_memory() {
 
 echo "📋 Vérification des services HTTP"
 echo "----------------------------------"
-check_service "Backend API" "http://localhost:5000/health" "200"
-check_service "Frontend" "http://localhost:3000" "200"
+# Docker : tout passe par nginx (HTTP_PORT, 80 par défaut). En dev : BASE_URL=http://localhost:3000
+BASE_URL="${BASE_URL:-http://localhost:${HTTP_PORT:-80}}"
+check_service "Frontend" "$BASE_URL/" "200"
+check_service "API (via proxy)" "$BASE_URL/api/auth/me" "401"
 
 echo ""
 echo "🐳 Vérification des containers Docker"
@@ -130,8 +132,8 @@ echo "---------------"
 # MongoDB stats (si accessible)
 if docker ps | grep -q financepilot-mongodb; then
     echo "🗄️  MongoDB:"
-    mongo_stats=$(docker exec financepilot-mongodb mongosh --quiet --eval "
-        db.getSiblingDB('financepilot');
+    mongo_stats=$(docker exec financepilot-mongodb sh -c 'exec mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$@"' _ --quiet --eval "
+        db = db.getSiblingDB('financepilot');
         const stats = db.stats(1024*1024);
         print('  - Taille base: ' + stats.dataSize.toFixed(2) + ' MB');
         print('  - Collections: ' + stats.collections);
@@ -140,6 +142,7 @@ if docker ps | grep -q financepilot-mongodb; then
         print('  - Utilisateurs: ' + userCount);
         print('  - Transactions: ' + txCount);
     " 2>/dev/null || echo "  ⚠️  Impossible de récupérer les stats MongoDB")
+    echo "$mongo_stats" # Les stats étaient calculées mais jamais affichées
 fi
 
 # Logs récents (si présents)
