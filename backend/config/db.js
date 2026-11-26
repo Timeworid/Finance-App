@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const logger = require('./logger');
+const { runMigrations } = require('../migrations');
 
 /**
  * Supprime l'ancien index TTL `refreshTokens.createdAt_1` s'il existe.
@@ -32,8 +33,10 @@ const connectDB = async (uri = process.env.MONGODB_URI) => {
     await mongoose.connect(uri);
     logger.info('MongoDB connecté avec succès');
     await dropLegacyUserTtlIndex();
+    // Migrations de données automatiques (une seule exécution chacune, voir migrations/)
+    await runMigrations(mongoose.connection.db);
   } catch (error) {
-    logger.error('Erreur de connexion MongoDB', { error: error.message });
+    logger.error('Erreur au démarrage (connexion MongoDB ou migration)', { error: error.message });
     process.exit(1);
   }
 };

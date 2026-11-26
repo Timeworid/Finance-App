@@ -1,5 +1,20 @@
 # Changelog
 
+## [2026-11-26] - Déploiement entièrement automatique
+
+### Ajouté
+- 🚀 `./scripts/deploy-production.sh` automatise tout :
+  - génération de `.env.docker` (secrets forts, permissions 600) ;
+  - régénération des secrets JWT faibles ;
+  - sauvegarde automatique avant mise à jour ;
+  - build, démarrage et vérification de bout en bout.
+  L'option `--prepare-only` vérifie la configuration sans déployer.
+- 🔁 **Migrations automatiques au démarrage du backend** (`backend/migrations/`) : exécution unique par migration grâce à un marqueur en base, qui sert aussi de verrou entre instances. Le marqueur est retiré en cas d'échec pour retenter au prochain démarrage. Le re-chiffrement des données historiques en clair ne demande plus aucune commande manuelle.
+
+### Sécurité
+- 🔒 `ENCRYPTION_KEY` n'est jamais générée ni modifiée quand des données existent : le déploiement s'arrête avec un message explicite.
+- 🔒 `generate-secrets.sh` ne peut plus écraser `.env.docker` : l'ancienne option interactive remplaçait la clé de chiffrement et rendait les données illisibles.
+
 ## [2026-11-26] - Découpage du frontend et tests
 
 ### Modifié

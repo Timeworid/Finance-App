@@ -1,12 +1,27 @@
 # Déploiement de FinancePilot
 
-## 1. Docker Compose (recommandé)
+## 1. Docker Compose (recommandé) — une seule commande
 
 ```bash
-cp .env.docker.example .env.docker
-./scripts/generate-secrets.sh          # copier les valeurs dans .env.docker
 ./scripts/deploy-production.sh
+# ou, avec votre domaine :
+FRONTEND_URL=https://finance.exemple.fr ./scripts/deploy-production.sh
 ```
+
+Le script fait **tout automatiquement**, à l'installation comme à chaque mise à jour :
+
+| Étape | Comportement |
+|---|---|
+| Configuration | Crée `.env.docker` (permissions 600) avec des secrets aléatoires forts s'il n'existe pas. Il régénère les secrets JWT absents, faibles ou identiques (seul effet : une reconnexion). |
+| Clé de chiffrement | Générée **uniquement** pour une installation neuve et **jamais modifiée** ensuite. Si elle est absente ou invalide alors que des données existent, le déploiement s'arrête sans rien changer. |
+| Sauvegarde | Si une base existe, elle est sauvegardée dans `./backups` **avant** toute mise à jour. En cas d'échec de la sauvegarde, le déploiement s'arrête. |
+| Build et démarrage | Build des images, démarrage, attente des healthchecks. |
+| Migrations | Exécutées par le backend au démarrage, **une seule fois** chacune (marqueurs dans la collection `_migrations`) : re-chiffrement des données historiques en clair, suppression de l'ancien index TTL dangereux. |
+| Vérification | Frontend et chaîne nginx → API → MongoDB testés. |
+
+`./scripts/deploy-production.sh --prepare-only` prépare et vérifie la configuration sans déployer.
+
+> ⚠️ **Conservez une copie de `.env.docker` hors du serveur.** Il contient `ENCRYPTION_KEY` : sans elle, les données (et leurs sauvegardes) sont illisibles. Si `.env.docker` est absent alors que des données existent, le script refuse de générer de nouveaux secrets et demande de restaurer le fichier d'origine.
 
 Architecture :
 
@@ -41,19 +56,15 @@ Placez un reverse proxy TLS devant nginx (Caddy, Traefik, Cloudflare Tunnel…) 
 
 ## 3. Mise à jour depuis une version antérieure (avant novembre 2026)
 
-Les anciennes versions avaient trois défauts qui laissent des traces en base :
+Relancez simplement `./scripts/deploy-production.sh` : tout est automatique.
 
-1. **Données en clair** : les imports CSV, les modifications de charges récurrentes ou de positions boursières, et les libellés contenant `:` étaient enregistrés sans chiffrement. Pour les chiffrer, faites d'abord une sauvegarde, puis lancez :
-   ```bash
-   ./scripts/backup-mongodb.sh
-   docker compose exec backend node scripts/reencrypt-plaintext.js --dry-run   # aperçu
-   docker compose exec backend node scripts/reencrypt-plaintext.js
-   ```
-   Hors Docker : `cd backend && npm run migrate:reencrypt`.
-2. **Index TTL dangereux** : l'index `refreshTokens.createdAt_1` supprimait les comptes utilisateurs 7 jours après leur plus ancienne session. Il est **supprimé automatiquement** au démarrage du backend.
-3. **Sessions** : les refresh tokens sont désormais hachés en base. Tous les utilisateurs devront se reconnecter une fois.
+- **Sauvegarde** : faite avant la mise à jour.
+- **Données historiques en clair** (anciens imports CSV, modifications de charges récurrentes ou de bourse, libellés contenant `:`) : chiffrées par la migration `reencrypt-plaintext-v1` au premier démarrage.
+- **Index TTL dangereux** (`refreshTokens.createdAt_1`, qui supprimait des comptes) : supprimé au démarrage.
+- **Secrets JWT faibles** : régénérés. `ENCRYPTION_KEY` est conservée.
+- **Sessions** : chaque utilisateur se reconnecte une fois, rien à faire.
 
-Le backend refuse aussi de démarrer avec des secrets faibles. Si c'est votre cas, générez-en de nouveaux. **Ne touchez pas à `ENCRYPTION_KEY`** : la remplacer rendrait les données existantes illisibles.
+Pour diagnostiquer manuellement : `docker compose exec backend node scripts/reencrypt-plaintext.js --dry-run`.
 
 ## 4. Sauvegardes
 

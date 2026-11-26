@@ -15,8 +15,7 @@ Prérequis : Node.js ≥ 20 et MongoDB en local.
 
 ```bash
 npm run install:all                    # dépendances racine, backend et frontend
-./scripts/generate-secrets.sh          # génère JWT_SECRET, JWT_REFRESH_SECRET, ENCRYPTION_KEY
-cp backend/.env.example backend/.env   # puis y coller les secrets générés
+./scripts/generate-secrets.sh --write  # crée backend/.env avec des secrets aléatoires (jamais d'écrasement)
 ./start.sh                             # backend :5000, frontend :3000 (logs : backend.log, frontend.log)
 ./stop.sh                              # arrêt
 ```
@@ -28,9 +27,10 @@ Le frontend appelle l'API en relatif (`/api`) : le proxy Vite la relaie au backe
 ## Déploiement Docker
 
 ```bash
-cp .env.docker.example .env.docker     # renseigner les secrets (obligatoires)
-./scripts/deploy-production.sh         # build, démarrage, vérification
+./scripts/deploy-production.sh         # tout est automatique : secrets, sauvegarde, build, migrations, vérification
 ```
+
+Le script crée `.env.docker` avec des secrets forts à la première installation. Il sauvegarde la base avant chaque mise à jour et ne modifie jamais `ENCRYPTION_KEY`. **Conservez une copie de `.env.docker` hors du serveur.**
 
 Seul nginx est exposé (port `HTTP_PORT`, 80 par défaut). MongoDB et l'API restent sur le réseau Docker interne. Voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) pour HTTPS, les sauvegardes et la mise à jour depuis une ancienne version.
 
@@ -43,7 +43,7 @@ Seul nginx est exposé (port `HTTP_PORT`, 80 par défaut). MongoDB et l'API rest
 | `cd frontend && npm test` | Tests frontend (Vitest) ; `npm run test:watch` en continu |
 | `cd backend && npm run lint` / `cd frontend && npm run lint` | ESLint |
 | `cd frontend && npm run build` | Build de production dans `frontend/dist` |
-| `cd backend && npm run migrate:reencrypt -- --dry-run` | Liste les données historiques restées en clair (sans `--dry-run` : les chiffre) |
+| `cd backend && npm run migrate:reencrypt -- --dry-run` | Diagnostic : données restées en clair (la migration s'exécute déjà automatiquement au démarrage) |
 | `./scripts/backup-mongodb.sh` / `./scripts/restore-mongodb.sh` | Sauvegarde / restauration |
 | `./scripts/health-check.sh` | État des services |
 
@@ -58,7 +58,8 @@ backend/
   models/           Modèles Mongoose (chiffrement dans les hooks pre('save'))
   routes/           Routes REST (validation Joi en liste blanche)
   utils/            Chiffrement AES-256-GCM, schémas Joi
-  scripts/          Migration de re-chiffrement
+  migrations/       Migrations de données automatiques au démarrage (exécution unique)
+  scripts/          Exécution manuelle de la migration (diagnostic)
   tests/            Tests d'intégration
 frontend/src/
   App.jsx           Racine : mise en page, navigation, modale d'export

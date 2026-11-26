@@ -61,11 +61,8 @@ jobs:
         run: |
           docker build -f Dockerfile.backend -t financepilot-backend:ci .
           docker build -f Dockerfile.frontend -t financepilot-frontend:ci .
-      - name: Validation de docker-compose.yml
-        env:
-          MONGO_ROOT_PASSWORD: ci
-          MONGO_APP_PASSWORD: ci
-          JWT_SECRET: ci
-          JWT_REFRESH_SECRET: ci
-          ENCRYPTION_KEY: ci
-        run: docker compose config -q
+      - name: Syntaxe des scripts shell
+        run: for f in scripts/*.sh start.sh stop.sh; do bash -n "$f"; done
+      # Génère .env.docker (secrets) et valide docker-compose.yml via le script de déploiement
+      - name: Préparation automatique du déploiement
+        run: ./scripts/deploy-production.sh --prepare-only

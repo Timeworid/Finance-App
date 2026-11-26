@@ -1,118 +1,33 @@
-#!/bin/bash
-# Script de génération des secrets cryptographiques pour FinancePilot
-# Usage: ./scripts/generate-secrets.sh
+#!/usr/bin/env bash
+# Génère des secrets pour le DÉVELOPPEMENT LOCAL (backend/.env).
+# Usage : ./scripts/generate-secrets.sh            → affiche les lignes à copier
+#         ./scripts/generate-secrets.sh --write    → crée backend/.env s'il n'existe pas
+#
+# En production (Docker), inutile : ./scripts/deploy-production.sh génère et
+# vérifie automatiquement .env.docker. Ce script n'écrase JAMAIS un fichier existant
+# (remplacer ENCRYPTION_KEY rendrait les données chiffrées illisibles).
 
-set -e
+set -euo pipefail
 
-echo "🔐 Génération des secrets cryptographiques pour FinancePilot"
-echo "=============================================================="
-echo ""
+gen_hex() {
+  if command -v openssl >/dev/null 2>&1; then openssl rand -hex "$1"; else od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; fi
+}
 
-# Vérifier que Node.js est installé
-if ! command -v node &> /dev/null; then
-    echo "❌ Erreur: Node.js n'est pas installé"
-    echo "Installez Node.js depuis https://nodejs.org"
+SECRETS="JWT_SECRET=$(gen_hex 64)
+JWT_REFRESH_SECRET=$(gen_hex 64)
+ENCRYPTION_KEY=$(gen_hex 32)"
+
+if [ "${1:-}" = "--write" ]; then
+  TARGET="backend/.env"
+  [ -f backend/.env.example ] || { echo "❌ Lancez ce script depuis la racine du projet"; exit 1; }
+  if [ -f "$TARGET" ]; then
+    echo "❌ $TARGET existe déjà : il n'est jamais écrasé (sa clé ENCRYPTION_KEY protège vos données)."
     exit 1
-fi
-
-echo "Génération de secrets sécurisés..."
-echo ""
-
-# Générer JWT_SECRET (64 bytes)
-echo "📝 JWT_SECRET (64 bytes):"
-JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(64).toString('hex'))")
-echo "$JWT_SECRET"
-echo ""
-
-# Générer JWT_REFRESH_SECRET (64 bytes)
-echo "📝 JWT_REFRESH_SECRET (64 bytes):"
-JWT_REFRESH_SECRET=$(node -e "console.log(require('crypto').randomBytes(64).toString('hex'))")
-echo "$JWT_REFRESH_SECRET"
-echo ""
-
-# Générer ENCRYPTION_KEY (32 bytes)
-echo "📝 ENCRYPTION_KEY (32 bytes):"
-ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-echo "$ENCRYPTION_KEY"
-echo ""
-
-# Générer mot de passe MongoDB sécurisé
-echo "📝 MONGO_ROOT_PASSWORD (32 caractères alphanumériques):"
-MONGO_ROOT_PASSWORD=$(node -e "console.log(require('crypto').randomBytes(24).toString('base64').replace(/[+/=]/g, ''))")
-echo "$MONGO_ROOT_PASSWORD"
-echo ""
-
-echo "📝 MONGO_APP_PASSWORD (32 caractères alphanumériques):"
-MONGO_APP_PASSWORD=$(node -e "console.log(require('crypto').randomBytes(24).toString('base64').replace(/[+/=]/g, ''))")
-echo "$MONGO_APP_PASSWORD"
-echo ""
-
-echo "=============================================================="
-echo "✅ Secrets générés avec succès!"
-echo ""
-echo "⚠️  IMPORTANT: Sauvegardez ces valeurs de manière sécurisée!"
-echo "   - Ne les commitez JAMAIS dans Git"
-echo "   - Utilisez un gestionnaire de secrets en production"
-echo "   - Changez-les régulièrement"
-echo ""
-echo "📋 Instructions:"
-echo "   1. Copiez les valeurs ci-dessus"
-echo "   2. Éditez votre fichier .env.docker ou backend/.env"
-echo "   3. Remplacez les valeurs 'YOUR_*_HERE' par les valeurs générées"
-echo ""
-
-# Option: Créer automatiquement le fichier .env.docker
-echo "Voulez-vous créer automatiquement le fichier .env.docker? (y/N)"
-read -r response
-
-if [[ "$response" =~ ^[Yy]$ ]]; then
-    if [ -f ".env.docker" ]; then
-        echo "⚠️  Le fichier .env.docker existe déjà!"
-        echo "Voulez-vous le remplacer? Cela écrasera l'ancien fichier! (yes/NO)"
-        read -r confirm
-        if [[ ! "$confirm" == "yes" ]]; then
-            echo "❌ Opération annulée"
-            exit 0
-        fi
-    fi
-
-    # Créer le fichier .env.docker avec les secrets générés
-    cat > .env.docker << EOF
-# Variables d'environnement pour Docker Compose
-# Généré automatiquement le $(date)
-
-# MongoDB
-MONGO_ROOT_USER=admin
-MONGO_ROOT_PASSWORD=$MONGO_ROOT_PASSWORD
-MONGO_APP_PASSWORD=$MONGO_APP_PASSWORD
-
-# JWT Secrets
-JWT_SECRET=$JWT_SECRET
-JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET
-
-# Encryption Key
-ENCRYPTION_KEY=$ENCRYPTION_KEY
-
-# URLs (MODIFIER AVEC VOTRE DOMAINE EN PRODUCTION!)
-FRONTEND_URL=http://localhost:3000
-VITE_API_URL=http://localhost:5000/api
-BACKEND_URL=http://backend:5000
-
-# Configuration
-LOG_LEVEL=info
-NODE_ENV=production
-EOF
-
-    echo ""
-    echo "✅ Fichier .env.docker créé avec succès!"
-    echo "📝 Vous pouvez maintenant modifier les URLs dans .env.docker si nécessaire"
-    echo ""
-    echo "⚠️  N'oubliez pas de modifier FRONTEND_URL et VITE_API_URL pour la production!"
+  fi
+  (umask 077 && grep -vE '^(JWT_SECRET|JWT_REFRESH_SECRET|ENCRYPTION_KEY)=' backend/.env.example > "$TARGET")
+  printf '%s\n' "$SECRETS" >> "$TARGET"
+  echo "✅ $TARGET créé avec des secrets aléatoires (permissions 600)."
 else
-    echo ""
-    echo "📋 Copiez manuellement les secrets dans votre fichier .env.docker"
+  echo "# Secrets à placer dans backend/.env (ne jamais les commiter) :"
+  echo "$SECRETS"
 fi
-
-echo ""
-echo "🚀 Pour déployer maintenant:"
-echo "   ./scripts/deploy-production.sh"
