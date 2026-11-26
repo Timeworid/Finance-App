@@ -1,28 +1,20 @@
 // Script d'initialisation MongoDB
-// Exécuté automatiquement au premier démarrage du container
+// Exécuté automatiquement au PREMIER démarrage du container (volume vide)
 
 db = db.getSiblingDB('financepilot');
 
-// Créer un utilisateur applicatif
+// Aucun mot de passe par défaut : échec explicite si la variable est absente
+const appPassword = process.env.MONGO_APP_PASSWORD;
+if (!appPassword) {
+  throw new Error('MONGO_APP_PASSWORD doit être défini');
+}
+
+// Compte applicatif à droits restreints (lecture/écriture sur financepilot uniquement)
 db.createUser({
   user: 'financepilot_user',
-  pwd: process.env.MONGO_APP_PASSWORD || 'changeme_app',
-  roles: [
-    {
-      role: 'readWrite',
-      db: 'financepilot',
-    },
-  ],
+  pwd: appPassword,
+  roles: [{ role: 'readWrite', db: 'financepilot' }],
 });
 
-// Créer les indexes pour performance
-db.users.createIndex({ email: 1 }, { unique: true });
-db.transactions.createIndex({ userId: 1, date: -1 });
-db.transactions.createIndex({ userId: 1 });
-db.categories.createIndex({ userId: 1 });
-db.categories.createIndex({ userId: 1, name: 1 });
-db.envelopes.createIndex({ userId: 1 });
-db.envelopes.createIndex({ userId: 1, name: 1 });
-db.settings.createIndex({ userId: 1 }, { unique: true });
-
-print('✓ MongoDB initialized successfully for FinancePilot');
+// Les index sont créés par Mongoose au démarrage du backend (définis dans les modèles)
+print('MongoDB initialisé pour FinancePilot');
