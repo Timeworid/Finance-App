@@ -331,6 +331,37 @@ const stockPricesSchema = Joi.object({
     .required(),
 });
 
+// Catégories de biens (identiques au modèle Asset)
+const ASSET_CATEGORIES = ['vehicule', 'immobilier', 'electronique', 'mobilier', 'bijoux', 'collection', 'autre'];
+
+// Champs d'un bien. Les champs facultatifs acceptent '' (formulaire vide) :
+// '' est converti en « absent » (.empty('')), puis en valeur par défaut à la création.
+const assetFields = {
+  name: Joi.string().trim().min(1).max(100),
+  category: Joi.string().valid(...ASSET_CATEGORIES),
+  currentValue: Joi.number().min(0).max(1e12),
+  purchasePrice: Joi.number().min(0).max(1e12).empty('').allow(null),
+  purchaseDate: Joi.date().iso().empty('').allow(null),
+  description: Joi.string().trim().max(1000).allow(''),
+};
+
+const assetSchema = Joi.object({
+  ...assetFields,
+  name: assetFields.name.required(),
+  category: assetFields.category.required(),
+  currentValue: assetFields.currentValue.required(),
+  purchasePrice: assetFields.purchasePrice.default(0),
+  purchaseDate: assetFields.purchaseDate.default(null),
+  description: assetFields.description.default(''),
+});
+
+// Mise à jour : un champ facultatif vidé ('' ou null) est remis à sa valeur neutre
+const assetUpdateSchema = Joi.object({
+  ...assetFields,
+  purchasePrice: Joi.number().min(0).max(1e12).allow(null, '').custom((v) => (v === '' || v === null ? 0 : v)),
+  purchaseDate: Joi.date().iso().allow(null, '').custom((v) => (v === '' ? null : v)),
+}).min(1);
+
 // Paramètres de liste des transactions (query string)
 const transactionQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(1000).default(400),
@@ -390,5 +421,7 @@ module.exports = {
   stockSchema,
   stockUpdateSchema,
   stockPricesSchema,
+  assetSchema,
+  assetUpdateSchema,
   validate,
 };

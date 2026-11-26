@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { authAPI } from '../services/api';
+import { authAPI, setAccessToken } from '../services/api';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -44,8 +44,8 @@ export default function Register() {
         lastName: form.lastName,
       });
 
-      // Stocker les tokens et l'utilisateur
-      localStorage.setItem('accessToken', data.accessToken);
+      // Access token en mémoire uniquement ; profil (non sensible) pour l'affichage
+      setAccessToken(data.accessToken);
       localStorage.setItem('user', JSON.stringify(data.user));
 
       // Rediriger vers le dashboard

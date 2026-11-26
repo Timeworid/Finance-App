@@ -4,11 +4,29 @@ import axios from 'axios';
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 /**
+ * Access token (durée de vie 15 min) gardé UNIQUEMENT en mémoire : un script
+ * injecté (XSS) ne peut pas le lire depuis localStorage. Après un rechargement
+ * de page, il est restauré via le refresh token (cookie httpOnly) : restoreSession().
+ */
+let accessToken = null;
+
+/** Enregistre l'access token reçu à la connexion / inscription. */
+export function setAccessToken(token) {
+  accessToken = token || null;
+}
+
+/** Indique si une session est active en mémoire. */
+export function hasAccessToken() {
+  return accessToken !== null;
+}
+
+/**
  * Supprime les données de session locales.
- * Le refresh token n'est jamais stocké côté JS : il vit dans un cookie httpOnly.
+ * Le refresh token n'est jamais accessible au JS : il vit dans un cookie httpOnly.
  */
 export function clearSession() {
-  localStorage.removeItem('accessToken');
+  accessToken = null;
+  localStorage.removeItem('accessToken');  // Nettoyage des anciennes versions
   localStorage.removeItem('refreshToken'); // Nettoyage des anciennes versions
   localStorage.removeItem('user');
 }
@@ -25,9 +43,8 @@ const api = axios.create({
 
 // Intercepteur de requête : ajouter le token d'authentification
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
   }
   return config;
 });
@@ -44,7 +61,7 @@ function refreshAccessToken() {
     refreshPromise = axios
       .post(`${API_BASE_URL}/auth/refresh`, null, { withCredentials: true })
       .then(({ data }) => {
-        localStorage.setItem('accessToken', data.accessToken);
+        accessToken = data.accessToken;
         return data.accessToken;
       })
       .finally(() => {
@@ -52,6 +69,21 @@ function refreshAccessToken() {
       });
   }
   return refreshPromise;
+}
+
+/**
+ * Restaure la session au chargement de la page (access token absent de la mémoire)
+ * à partir du cookie httpOnly. Sans effet si une session est déjà active.
+ * @returns {Promise<boolean>} true si l'utilisateur est authentifié
+ */
+export async function restoreSession() {
+  if (accessToken) return true;
+  try {
+    await refreshAccessToken();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Routes pour lesquelles un 401 ne doit pas déclencher de refresh

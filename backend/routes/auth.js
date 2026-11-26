@@ -51,31 +51,34 @@ function generateAccessToken(user) {
 
 /**
  * Génère un refresh token JWT (7 jours).
- * Le `jwtid` aléatoire garantit l'unicité même pour deux tokens émis à la même seconde.
+ * - `fam` : famille (session) à laquelle appartient le token ;
+ * - `jwtid` aléatoire : unicité même pour deux tokens émis à la même seconde.
  */
-function generateRefreshToken(user) {
+function generateRefreshToken(user, family) {
   return jwt.sign(
-    { userId: user._id },
+    { userId: user._id, fam: family },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: '7d', algorithm: 'HS256', jwtid: crypto.randomUUID() }
   );
 }
 
+/** Place le refresh token dans le cookie httpOnly. */
+function setRefreshCookie(res, refreshToken) {
+  res.cookie(REFRESH_COOKIE, refreshToken, { ...refreshCookieOptions(), maxAge: REFRESH_TTL_MS });
+}
+
 /**
- * Émet une nouvelle paire de tokens, enregistre le hash du refresh token
- * et le place dans un cookie httpOnly. Le refresh token n'est jamais renvoyé
- * dans le corps de la réponse (il ne doit pas finir dans localStorage).
+ * Ouvre une session (nouvelle famille) : access token + refresh token en cookie.
+ * Le refresh token n'est jamais renvoyé dans le corps de la réponse.
  * @returns {Promise<string>} access token
  */
-async function issueTokens(res, user) {
-  const accessToken = generateAccessToken(user);
-  const refreshToken = generateRefreshToken(user);
-
-  user.addRefreshToken(refreshToken);
+async function startSession(res, user) {
+  const family = crypto.randomUUID();
+  const refreshToken = generateRefreshToken(user, family);
+  user.addRefreshSession(family, refreshToken);
   await user.save();
-
-  res.cookie(REFRESH_COOKIE, refreshToken, { ...refreshCookieOptions(), maxAge: REFRESH_TTL_MS });
-  return accessToken;
+  setRefreshCookie(res, refreshToken);
+  return generateAccessToken(user);
 }
 
 /**
@@ -181,7 +184,7 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res)
       Settings.create({ userId: user._id, startBalance: 0, monthlyCapacity: 1000 }),
     ]);
 
-    const accessToken = await issueTokens(res, user);
+    const accessToken = await startSession(res, user);
 
     res.status(201).json({
       message: 'Inscription réussie',
@@ -218,7 +221,7 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
       });
     }
 
-    const accessToken = await issueTokens(res, user);
+    const accessToken = await startSession(res, user);
 
     res.json({
       message: 'Connexion réussie',
@@ -235,10 +238,11 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
 
 /**
  * POST /api/auth/refresh
- * Rafraîchit l'access token avec ROTATION du refresh token :
- * l'ancien est invalidé et un nouveau est émis à chaque appel.
- * Si un token valide mais déjà consommé est présenté (vol probable),
- * toutes les sessions de l'utilisateur sont révoquées.
+ * Rafraîchit l'access token avec ROTATION du refresh token (familles de tokens) :
+ * - token courant → nouveau couple de tokens, l'ancien devient « précédent » ;
+ * - token précédent dans les 30 s (onglets concurrents) → nouvel access token,
+ *   cookie inchangé (le navigateur détient déjà le token courant) ;
+ * - tout autre token de la famille → réutilisation (vol probable) : session révoquée.
  */
 router.post('/refresh', async (req, res) => {
   const refreshToken = req.cookies?.[REFRESH_COOKIE];
@@ -252,25 +256,33 @@ router.post('/refresh', async (req, res) => {
   try {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, { algorithms: JWT_ALGORITHMS });
 
-    const user = await User.findById(decoded.userId);
-    if (!user) {
-      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
-      return res.status(401).json({ error: 'Utilisateur non trouvé' });
+    let user = decoded.fam ? await User.findById(decoded.userId) : null;
+    let { status } = user ? user.checkRefreshToken(decoded.fam, refreshToken) : { status: 'unknown' };
+
+    if (status === 'current') {
+      const newRefreshToken = generateRefreshToken(user, decoded.fam);
+      if (await User.rotateRefreshToken(user._id, decoded.fam, refreshToken, newRefreshToken)) {
+        setRefreshCookie(res, newRefreshToken);
+        return res.json({ accessToken: generateAccessToken(user) });
+      }
+      // Une requête concurrente a tourné la session entre la lecture et l'écriture :
+      // relecture, le token est alors normalement « précédent » (période de grâce).
+      user = await User.findById(decoded.userId);
+      ({ status } = user ? user.checkRefreshToken(decoded.fam, refreshToken) : { status: 'unknown' });
     }
 
-    if (!user.hasRefreshToken(refreshToken)) {
-      // Réutilisation d'un token déjà tourné → révocation de toutes les sessions
-      user.refreshTokens = [];
+    if (status === 'grace') {
+      return res.json({ accessToken: generateAccessToken(user) });
+    }
+
+    if (status === 'reused') {
+      user.removeRefreshSession(decoded.fam);
       await user.save();
-      logger.warn('Réutilisation de refresh token détectée, sessions révoquées', { userId: String(user._id) });
-      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
-      return res.status(401).json({ error: 'Refresh token invalide' });
+      logger.warn('Réutilisation de refresh token détectée, session révoquée', { userId: String(user._id) });
     }
 
-    user.removeRefreshToken(refreshToken);
-    const accessToken = await issueTokens(res, user);
-
-    res.json({ accessToken });
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
+    return res.status(401).json({ error: 'Refresh token invalide' });
   } catch (error) {
     if (error.name === 'TokenExpiredError' || error.name === 'JsonWebTokenError') {
       res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
@@ -299,9 +311,10 @@ router.post('/logout', async (req, res) => {
     if (refreshToken) {
       // decode (sans vérifier l'expiration) : seul l'identifiant est utile pour révoquer
       const decoded = jwt.decode(refreshToken);
-      const user = decoded?.userId ? await User.findById(decoded.userId) : null;
-      if (user && user.hasRefreshToken(refreshToken)) {
-        user.removeRefreshToken(refreshToken);
+      const user = decoded?.userId && decoded?.fam ? await User.findById(decoded.userId) : null;
+      // Seul un token courant ou précédent de la session permet de la fermer
+      if (user && ['current', 'grace'].includes(user.checkRefreshToken(decoded.fam, refreshToken).status)) {
+        user.removeRefreshSession(decoded.fam);
         await user.save();
       }
     }

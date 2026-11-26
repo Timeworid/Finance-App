@@ -6,8 +6,8 @@ Application de pilotage financier personnel : transactions, budgets, enveloppes 
 |---|---|
 | Backend | Node.js 22, Express 5, MongoDB (Mongoose 9) |
 | Frontend | React 19, Vite 8, Tailwind CSS 3, Recharts |
-| Sécurité | JWT (access 15 min + refresh 7 j en cookie httpOnly avec rotation), AES-256-GCM, bcrypt, helmet, rate limiting |
-| Qualité | Tests `node:test` + supertest + MongoDB en mémoire, ESLint, CI GitHub Actions |
+| Sécurité | JWT (access 15 min en mémoire + refresh 7 j en cookie httpOnly avec rotation), AES-256-GCM, bcrypt, helmet, rate limiting |
+| Qualité | Tests backend (`node:test` + supertest + MongoDB en mémoire), tests frontend (Vitest + Testing Library), ESLint, CI GitHub Actions |
 
 ## Démarrage rapide (développement)
 
@@ -38,7 +38,9 @@ Seul nginx est exposé (port `HTTP_PORT`, 80 par défaut). MongoDB et l'API rest
 
 | Commande | Effet |
 |---|---|
-| `cd backend && npm test` | Tests d'intégration (télécharge MongoDB au premier lancement) |
+| `npm test` (racine) | Tests backend + frontend |
+| `cd backend && npm test` | Tests d'intégration API (télécharge MongoDB au premier lancement) |
+| `cd frontend && npm test` | Tests frontend (Vitest) ; `npm run test:watch` en continu |
 | `cd backend && npm run lint` / `cd frontend && npm run lint` | ESLint |
 | `cd frontend && npm run build` | Build de production dans `frontend/dist` |
 | `cd backend && npm run migrate:reencrypt -- --dry-run` | Liste les données historiques restées en clair (sans `--dry-run` : les chiffre) |
@@ -59,9 +61,13 @@ backend/
   scripts/          Migration de re-chiffrement
   tests/            Tests d'intégration
 frontend/src/
-  App.jsx           Application principale (tableau de bord, transactions, catégories, enveloppes)
-  components/       Écrans dédiés (bourse, biens, récurrents, connexion…)
+  App.jsx           Racine : mise en page, navigation, modale d'export
+  hooks/            useFinanceData : chargement API, état, persistance (debounce des éditions inline)
+  views/            Vues : tableau de bord, transactions (+ import CSV, édition), catégories, enveloppes, simulateurs
+  lib/              Logique pure testée : formats, parsing, calculs financiers, reducer, export CSV
+  components/       Composants UI génériques (ui.jsx) et écrans bourse, biens, récurrents, connexion
   services/api.js   Client axios (refresh automatique single-flight)
+  __tests__/        Tests Vitest (unitaires, caractérisation de l'app, non-régression)
 docs/               Déploiement ; archive/ = anciens documents de travail
 ```
 
@@ -86,7 +92,7 @@ Toutes les routes sauf `/api/auth/*` exigent `Authorization: Bearer <accessToken
 ## Sécurité : points clés
 
 - Les montants, libellés et valeurs sont chiffrés en AES-256-GCM. **Conservez `ENCRYPTION_KEY`** : sans elle, les données sont perdues.
-- Le refresh token n'est jamais accessible au JavaScript. Il est stocké haché (SHA-256) en base et change à chaque renouvellement. S'il est réutilisé (signe de vol), toutes les sessions de l'utilisateur sont révoquées.
+- L'access token (15 min) reste en mémoire : il n'est jamais écrit dans `localStorage`. Le refresh token vit dans un cookie httpOnly et est stocké haché (SHA-256) en base. Il change à chaque renouvellement (rotation par famille, atomique). La réutilisation d'un ancien token révoque la session ; deux onglets simultanés sont tolérés 30 s.
 - Les entrées sont validées par Joi en liste blanche : `userId` et les champs inconnus sont ignorés.
 
 ## Licence
