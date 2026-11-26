@@ -1,12 +1,42 @@
 const express = require('express');
-const router = express.Router();
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const router = express.Router();
+const logger = require('../config/logger');
 const User = require('../models/User');
 const Category = require('../models/Category');
 const Settings = require('../models/Settings');
 const { validate, registerSchema, loginSchema } = require('../utils/validators');
 const { authLimiter } = require('../middleware/rateLimiter');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, JWT_ALGORITHMS } = require('../middleware/auth');
+
+const REFRESH_COOKIE = 'refreshToken';
+const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
+
+/**
+ * Hash bcrypt factice : comparé quand l'email n'existe pas, pour que le temps
+ * de réponse soit identique et ne révèle pas quels emails sont inscrits.
+ */
+const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 12);
+
+/**
+ * Options du cookie de refresh.
+ * - httpOnly : inaccessible au JavaScript (protection XSS)
+ * - secure   : activé en production, sauf COOKIE_SECURE=false (déploiement HTTP local)
+ * - path     : envoyé uniquement aux routes d'authentification
+ */
+function refreshCookieOptions() {
+  const secure = process.env.COOKIE_SECURE
+    ? process.env.COOKIE_SECURE === 'true'
+    : process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure,
+    sameSite: 'strict',
+    path: '/api/auth',
+  };
+}
 
 /**
  * Génère un access token JWT (15 minutes)
@@ -15,20 +45,48 @@ function generateAccessToken(user) {
   return jwt.sign(
     { userId: user._id, email: user.email },
     process.env.JWT_SECRET,
-    { expiresIn: '15m' }
+    { expiresIn: '15m', algorithm: 'HS256' }
   );
 }
 
 /**
- * Génère un refresh token JWT (7 jours)
+ * Génère un refresh token JWT (7 jours).
+ * Le `jwtid` aléatoire garantit l'unicité même pour deux tokens émis à la même seconde.
  */
 function generateRefreshToken(user) {
   return jwt.sign(
-    { userId: user._id, email: user.email },
+    { userId: user._id },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '7d', algorithm: 'HS256', jwtid: crypto.randomUUID() }
   );
 }
+
+/**
+ * Émet une nouvelle paire de tokens, enregistre le hash du refresh token
+ * et le place dans un cookie httpOnly. Le refresh token n'est jamais renvoyé
+ * dans le corps de la réponse (il ne doit pas finir dans localStorage).
+ * @returns {Promise<string>} access token
+ */
+async function issueTokens(res, user) {
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
+
+  user.addRefreshToken(refreshToken);
+  await user.save();
+
+  res.cookie(REFRESH_COOKIE, refreshToken, { ...refreshCookieOptions(), maxAge: REFRESH_TTL_MS });
+  return accessToken;
+}
+
+/**
+ * Réponse publique d'un utilisateur (aucun champ sensible).
+ */
+const publicUser = (user) => ({
+  id: user._id,
+  email: user.email,
+  firstName: user.firstName,
+  lastName: user.lastName,
+});
 
 /**
  * Catégories par défaut lors de l'inscription
@@ -101,62 +159,41 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res)
     const { email, password, firstName, lastName } = req.body;
 
     // Vérifier si l'email existe déjà
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.exists({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({
         error: 'Cet email est déjà utilisé',
       });
     }
 
-    // Créer l'utilisateur
+    // Créer l'utilisateur (mot de passe haché par le hook pre-save)
     const user = new User({
       email,
-      password, // Sera haché par le pre-save hook
+      password,
       firstName: firstName || '',
       lastName: lastName || '',
     });
-
     await user.save();
 
-    // Créer les catégories par défaut
-    await Category.insertMany(defaultCategories(user._id));
+    // Catégories et settings par défaut, en parallèle
+    await Promise.all([
+      Category.insertMany(defaultCategories(user._id)),
+      Settings.create({ userId: user._id, startBalance: 0, monthlyCapacity: 1000 }),
+    ]);
 
-    // Créer les settings par défaut
-    await Settings.create({
-      userId: user._id,
-      startBalance: 0,
-      monthlyCapacity: 1000,
-    });
-
-    // Générer les tokens
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
-    // Stocker le refresh token
-    user.addRefreshToken(refreshToken);
-    await user.save();
-
-    // Envoyer le refresh token en cookie HTTP-only
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 jours
-    });
+    const accessToken = await issueTokens(res, user);
 
     res.status(201).json({
       message: 'Inscription réussie',
-      user: {
-        id: user._id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-      },
+      user: publicUser(user),
       accessToken,
-      refreshToken,
     });
   } catch (error) {
-    console.error('Erreur lors de l\'inscription:', error);
+    // Course entre deux inscriptions simultanées : index unique sur l'email
+    if (error.code === 11000) {
+      return res.status(400).json({ error: 'Cet email est déjà utilisé' });
+    }
+    logger.error('Erreur lors de l\'inscription', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de l\'inscription',
     });
@@ -171,51 +208,25 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Trouver l'utilisateur
-    const user = await User.findOne({ email });
-    if (!user) {
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    // Comparaison systématique (hash factice si l'utilisateur n'existe pas) : temps constant
+    const isMatch = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
+    if (!user || !isMatch) {
       return res.status(401).json({
         error: 'Email ou mot de passe incorrect',
       });
     }
 
-    // Vérifier le mot de passe
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({
-        error: 'Email ou mot de passe incorrect',
-      });
-    }
-
-    // Générer les tokens
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
-    // Stocker le refresh token
-    user.addRefreshToken(refreshToken);
-    await user.save();
-
-    // Envoyer le refresh token en cookie HTTP-only
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    const accessToken = await issueTokens(res, user);
 
     res.json({
       message: 'Connexion réussie',
-      user: {
-        id: user._id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-      },
+      user: publicUser(user),
       accessToken,
-      refreshToken,
     });
   } catch (error) {
-    console.error('Erreur lors de la connexion:', error);
+    logger.error('Erreur lors de la connexion', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la connexion',
     });
@@ -224,58 +235,52 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
 
 /**
  * POST /api/auth/refresh
- * Rafraîchir l'access token
+ * Rafraîchit l'access token avec ROTATION du refresh token :
+ * l'ancien est invalidé et un nouveau est émis à chaque appel.
+ * Si un token valide mais déjà consommé est présenté (vol probable),
+ * toutes les sessions de l'utilisateur sont révoquées.
  */
 router.post('/refresh', async (req, res) => {
+  const refreshToken = req.cookies?.[REFRESH_COOKIE];
+
+  if (!refreshToken) {
+    return res.status(401).json({
+      error: 'Refresh token manquant',
+    });
+  }
+
   try {
-    // Récupérer le refresh token depuis le cookie ou le body
-    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, { algorithms: JWT_ALGORITHMS });
 
-    if (!refreshToken) {
-      return res.status(401).json({
-        error: 'Refresh token manquant',
-      });
-    }
-
-    // Vérifier le refresh token
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-
-    // Vérifier que le token existe dans la DB
     const user = await User.findById(decoded.userId);
     if (!user) {
-      return res.status(401).json({
-        error: 'Utilisateur non trouvé',
-      });
+      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
+      return res.status(401).json({ error: 'Utilisateur non trouvé' });
     }
 
-    const tokenExists = user.refreshTokens.some(rt => rt.token === refreshToken);
-    if (!tokenExists) {
-      return res.status(401).json({
-        error: 'Refresh token invalide',
-      });
+    if (!user.hasRefreshToken(refreshToken)) {
+      // Réutilisation d'un token déjà tourné → révocation de toutes les sessions
+      user.refreshTokens = [];
+      await user.save();
+      logger.warn('Réutilisation de refresh token détectée, sessions révoquées', { userId: String(user._id) });
+      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
+      return res.status(401).json({ error: 'Refresh token invalide' });
     }
 
-    // Générer un nouveau access token
-    const accessToken = generateAccessToken(user);
+    user.removeRefreshToken(refreshToken);
+    const accessToken = await issueTokens(res, user);
 
-    res.json({
-      accessToken,
-    });
+    res.json({ accessToken });
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
+    if (error.name === 'TokenExpiredError' || error.name === 'JsonWebTokenError') {
+      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
       return res.status(401).json({
-        error: 'Refresh token expiré',
+        error: 'Refresh token invalide ou expiré',
         code: 'REFRESH_TOKEN_EXPIRED',
       });
     }
 
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        error: 'Refresh token invalide',
-      });
-    }
-
-    console.error('Erreur lors du refresh:', error);
+    logger.error('Erreur lors du refresh', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors du rafraîchissement du token',
     });
@@ -284,26 +289,27 @@ router.post('/refresh', async (req, res) => {
 
 /**
  * POST /api/auth/logout
- * Déconnexion (supprime le refresh token)
+ * Déconnexion : révoque le refresh token du cookie.
+ * Ne requiert pas d'access token valide (sinon impossible de se déconnecter après expiration).
  */
-router.post('/logout', authenticateToken, async (req, res) => {
+router.post('/logout', async (req, res) => {
   try {
-    const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+    const refreshToken = req.cookies?.[REFRESH_COOKIE];
 
     if (refreshToken) {
-      const user = await User.findById(req.user.userId);
-      if (user) {
+      // decode (sans vérifier l'expiration) : seul l'identifiant est utile pour révoquer
+      const decoded = jwt.decode(refreshToken);
+      const user = decoded?.userId ? await User.findById(decoded.userId) : null;
+      if (user && user.hasRefreshToken(refreshToken)) {
         user.removeRefreshToken(refreshToken);
         await user.save();
       }
     }
 
-    // Supprimer le cookie
-    res.clearCookie('refreshToken');
-
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
     res.status(204).send();
   } catch (error) {
-    console.error('Erreur lors de la déconnexion:', error);
+    logger.error('Erreur lors de la déconnexion', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la déconnexion',
     });
@@ -313,32 +319,16 @@ router.post('/logout', authenticateToken, async (req, res) => {
 /**
  * GET /api/auth/me
  * Obtenir les informations de l'utilisateur connecté
+ * (le middleware a déjà chargé le document, inutile de refaire une requête)
  */
-router.get('/me', authenticateToken, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.userId).select('-password -refreshTokens');
-
-    if (!user) {
-      return res.status(404).json({
-        error: 'Utilisateur non trouvé',
-      });
-    }
-
-    res.json({
-      user: {
-        id: user._id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        createdAt: user.createdAt,
-      },
-    });
-  } catch (error) {
-    console.error('Erreur lors de la récupération du profil:', error);
-    res.status(500).json({
-      error: 'Erreur lors de la récupération du profil',
-    });
-  }
+router.get('/me', authenticateToken, (req, res) => {
+  const user = req.userDoc;
+  res.json({
+    user: {
+      ...publicUser(user),
+      createdAt: user.createdAt,
+    },
+  });
 });
 
 module.exports = router;

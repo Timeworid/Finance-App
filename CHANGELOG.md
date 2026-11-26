@@ -1,5 +1,38 @@
 # Changelog
 
+## [2026-11-26] - Correctifs de sécurité, intégrité des données et déploiement
+
+### Sécurité
+- 🔒 Les **refresh tokens** ne sont plus renvoyés au JavaScript ni stockés dans `localStorage` : uniquement en cookie httpOnly (`path=/api/auth`). Ils sont hachés (SHA-256) en base, renouvelés à chaque refresh (rotation), et toutes les sessions sont révoquées en cas de réutilisation.
+- 🔒 **Assignation de masse** corrigée sur `PUT /api/stocks/:id` et `PUT /api/recurring/:id` : validation Joi en liste blanche, `userId` non modifiable.
+- 🔒 Algorithme JWT imposé (HS256), comparaison bcrypt à temps constant (pas d'énumération des emails), en-tête `Bearer` strict.
+- 🔒 Les erreurs de validation ne journalisent plus `req.body` (les mots de passe apparaissaient en clair dans les logs).
+- 🔒 Validation de la configuration au démarrage : secrets absents ou faibles et clé de chiffrement invalide sont refusés.
+- 🔒 Docker : MongoDB et l'API ne sont plus exposés sur l'hôte, le backend utilise un compte Mongo à droits restreints, il n'y a plus de mot de passe par défaut `changeme`, la CSP nginx n'autorise plus `unsafe-eval` et les sourcemaps ne sont plus publiées.
+- 🔒 `trust proxy` est configuré : le rate limiting voit l'IP réelle, et non celle de nginx. Les limites d'écriture et d'import s'appliquent par utilisateur.
+
+### Corrigé
+- 🐛 **Suppression de comptes utilisateurs** : l'index TTL sur `refreshTokens.createdAt` supprimait l'utilisateur entier 7 jours après sa plus ancienne session. L'index est supprimé automatiquement au démarrage.
+- 🐛 **Données stockées en clair** : imports CSV (`insertMany` ne chiffrait pas), modifications des charges récurrentes et des positions boursières, libellés contenant `:`. Le script `npm run migrate:reencrypt` chiffre les données existantes.
+- 🐛 `GET /api/settings` renvoyait les valeurs chiffrées : le solde de départ retombait à 0 à chaque rechargement.
+- 🐛 `GET /api/transactions/stats` renvoyait toujours 0.
+- 🐛 La recherche de transactions ne trouvait rien (libellés chiffrés), et `total` ne comptait que la page courante.
+- 🐛 Le frontend ne chargeait que les 400 dernières transactions : le chargement est désormais paginé.
+- 🐛 `GET /api/stocks/portfolio/summary` plantait dès qu'une position avait un compte renseigné.
+- 🐛 Un identifiant mal formé provoquait une erreur 500 au lieu d'une 400. `limit` est désormais plafonné à 1000.
+- 🐛 La déconnexion ne révoquait pas la session côté serveur.
+- 🐛 Le build de production échouait (`manualChunks` incompatible avec Vite 8).
+- 🐛 Le build Docker échouait (`package-lock.json` ignoré par git alors que `npm ci` l'exige), et le backend créait une boucle de redirection HTTPS derrière nginx.
+- 🐛 Les scripts de sauvegarde, restauration et supervision appelaient MongoDB sans authentification.
+
+### Ajouté
+- ✅ 27 tests d'intégration (`cd backend && npm test`), ESLint sur le backend et le frontend, CI GitHub Actions.
+- ✅ Arrêt propre (SIGTERM/SIGINT) ; `/health` renvoie l'état de MongoDB.
+- 📝 README réécrit, `docs/DEPLOIEMENT.md` ; anciens documents déplacés dans `docs/archive/`.
+
+### Supprimé
+- `FinancePilot.jsx` (ancienne copie de `App.jsx`), `docker-entrypoint.sh`, le `health-check.sh` en double, les fichiers `.pid` et `.claude/settings.local.json` versionnés.
+
 ## [2025-07-01] - Refonte majeure
 
 ### Ajouté

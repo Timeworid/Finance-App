@@ -22,7 +22,8 @@ echo "📁 Destination: $BACKUP_PATH"
 # Vérifier si MongoDB tourne dans Docker
 if docker ps | grep -q financepilot-mongodb; then
     echo "🐳 Backup depuis Docker container"
-    docker exec financepilot-mongodb mongodump \
+    # Authentification avec le compte root défini dans le container (jamais affiché côté hôte)
+    docker exec financepilot-mongodb sh -c 'exec mongodump -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$@"' _ \
         --db "$DB_NAME" \
         --out "/tmp/backup-$DATE" \
         --gzip

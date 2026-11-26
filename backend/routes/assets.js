@@ -1,11 +1,15 @@
 const express = require('express');
+const logger = require('../config/logger');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const Asset = require('../models/Asset');
 const { authenticateToken } = require('../middleware/auth');
+const { writeLimiter } = require('../middleware/rateLimiter');
+const validateObjectId = require('../middleware/validateObjectId');
 
 // Toutes les routes nécessitent l'authentification
 router.use(authenticateToken);
+router.param('id', validateObjectId);
 
 /**
  * GET /api/assets
@@ -18,7 +22,7 @@ router.get('/', async (req, res) => {
 
     res.json(assets);
   } catch (error) {
-    console.error('Error fetching assets:', error);
+    logger.error('Error fetching assets', { error: error.message });
     res.status(500).json({ message: 'Erreur lors de la récupération des biens' });
   }
 });
@@ -27,7 +31,7 @@ router.get('/', async (req, res) => {
  * POST /api/assets
  * Créer un nouveau bien
  */
-router.post('/', [
+router.post('/', writeLimiter, [
   body('name').trim().notEmpty().withMessage('Le nom est requis'),
   body('category').isIn([
     'vehicule', 'immobilier', 'electronique', 'mobilier', 'bijoux', 'collection', 'autre'
@@ -56,7 +60,7 @@ router.post('/', [
     await asset.save();
     res.status(201).json(asset);
   } catch (error) {
-    console.error('Error creating asset:', error);
+    logger.error('Error creating asset', { error: error.message });
     res.status(500).json({ message: 'Erreur lors de la création du bien' });
   }
 });
@@ -65,7 +69,7 @@ router.post('/', [
  * PUT /api/assets/:id
  * Modifier un bien existant
  */
-router.put('/:id', [
+router.put('/:id', writeLimiter, [
   body('name').optional().trim().notEmpty().withMessage('Le nom ne peut pas être vide'),
   body('category').optional().isIn([
     'vehicule', 'immobilier', 'electronique', 'mobilier', 'bijoux', 'collection', 'autre'
@@ -98,7 +102,7 @@ router.put('/:id', [
     await asset.save();
     res.json(asset);
   } catch (error) {
-    console.error('Error updating asset:', error);
+    logger.error('Error updating asset', { error: error.message });
     res.status(500).json({ message: 'Erreur lors de la mise à jour du bien' });
   }
 });
@@ -107,7 +111,7 @@ router.put('/:id', [
  * DELETE /api/assets/:id
  * Supprimer un bien
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', writeLimiter, async (req, res) => {
   try {
     const asset = await Asset.findOneAndDelete({ _id: req.params.id, userId: req.user.userId });
 
@@ -117,7 +121,7 @@ router.delete('/:id', async (req, res) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error('Error deleting asset:', error);
+    logger.error('Error deleting asset', { error: error.message });
     res.status(500).json({ message: 'Erreur lors de la suppression du bien' });
   }
 });

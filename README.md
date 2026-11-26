@@ -1,187 +1,93 @@
-# FinancePilot 🚀
+# FinancePilot
 
-Application de pilotage financier personnel avec backend sécurisé et authentification.
+Application de pilotage financier personnel : transactions, budgets, enveloppes d'épargne, biens, charges récurrentes et portefeuille boursier. Les données sensibles sont chiffrées en base.
 
-## Architecture
+| Couche | Technologies |
+|---|---|
+| Backend | Node.js 22, Express 5, MongoDB (Mongoose 9) |
+| Frontend | React 19, Vite 8, Tailwind CSS 3, Recharts |
+| Sécurité | JWT (access 15 min + refresh 7 j en cookie httpOnly avec rotation), AES-256-GCM, bcrypt, helmet, rate limiting |
+| Qualité | Tests `node:test` + supertest + MongoDB en mémoire, ESLint, CI GitHub Actions |
 
-- **Backend**: Node.js + Express + MongoDB
-- **Frontend**: React + Vite
-- **Authentification**: JWT (access + refresh tokens)
-- **Sécurité**: Chiffrement AES-256-GCM pour les données sensibles
+## Démarrage rapide (développement)
 
-## Démarrage rapide
-
-### Prérequis
-
-- Node.js 18+ installé
-- MongoDB en cours d'exécution (local ou distant)
-- Git
-
-### Configuration
-
-1. Cloner le dépôt et installer les dépendances
-
-2. Configurer les variables d'environnement :
-
-Créer un fichier `.env` dans le dossier `backend/` :
-
-```env
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/financepilot
-JWT_SECRET=votre_secret_jwt_super_securise
-JWT_REFRESH_SECRET=votre_refresh_secret_super_securise
-ENCRYPTION_KEY=votre_cle_chiffrement_32_bytes_hex
-NODE_ENV=development
-FRONTEND_URL=http://localhost:3000
-```
-
-### Utilisation
-
-#### Démarrer l'application
+Prérequis : Node.js ≥ 20 et MongoDB en local.
 
 ```bash
-./start.sh
+npm run install:all                    # dépendances racine, backend et frontend
+./scripts/generate-secrets.sh          # génère JWT_SECRET, JWT_REFRESH_SECRET, ENCRYPTION_KEY
+cp backend/.env.example backend/.env   # puis y coller les secrets générés
+./start.sh                             # backend :5000, frontend :3000 (logs : backend.log, frontend.log)
+./stop.sh                              # arrêt
 ```
 
-Cette commande :
-- ✅ Nettoie les processus existants
-- ✅ Libère les ports 3000 et 5000
-- ✅ Démarre le backend sur http://localhost:5000
-- ✅ Démarre le frontend sur http://localhost:3000
-- ✅ Crée des fichiers de logs (`backend.log` et `frontend.log`)
+Le frontend appelle l'API en relatif (`/api`) : le proxy Vite la relaie au backend en dev et nginx le fait en production. Il n'y a donc pas de CORS à configurer.
 
-#### Arrêter l'application
+> Le backend **refuse de démarrer** si un secret est absent ou faible : `ENCRYPTION_KEY` doit faire 64 caractères hexadécimaux, les secrets JWT au moins 32 caractères et être différents l'un de l'autre.
+
+## Déploiement Docker
 
 ```bash
-./stop.sh
+cp .env.docker.example .env.docker     # renseigner les secrets (obligatoires)
+./scripts/deploy-production.sh         # build, démarrage, vérification
 ```
 
-Cette commande :
-- ✅ Arrête proprement le backend et le frontend
-- ✅ Libère tous les ports utilisés
-- ✅ Nettoie les fichiers PID
+Seul nginx est exposé (port `HTTP_PORT`, 80 par défaut). MongoDB et l'API restent sur le réseau Docker interne. Voir [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) pour HTTPS, les sauvegardes et la mise à jour depuis une ancienne version.
 
-#### Consulter les logs
+## Commandes
 
-```bash
-# Logs backend
-tail -f backend.log
+| Commande | Effet |
+|---|---|
+| `cd backend && npm test` | Tests d'intégration (télécharge MongoDB au premier lancement) |
+| `cd backend && npm run lint` / `cd frontend && npm run lint` | ESLint |
+| `cd frontend && npm run build` | Build de production dans `frontend/dist` |
+| `cd backend && npm run migrate:reencrypt -- --dry-run` | Liste les données historiques restées en clair (sans `--dry-run` : les chiffre) |
+| `./scripts/backup-mongodb.sh` / `./scripts/restore-mongodb.sh` | Sauvegarde / restauration |
+| `./scripts/health-check.sh` | État des services |
 
-# Logs frontend
-tail -f frontend.log
-```
-
-## Fonctionnalités
-
-### Gestion financière
-
-- 📊 **Dashboard** : Vue d'ensemble avec KPIs et graphiques
-- 💳 **Transactions** : Import CSV, catégorisation automatique
-- 🏷️ **Catégories** : Catégories personnalisées avec budgets
-- 💰 **Enveloppes** : Comptes d'épargne avec projections
-- 🏠 **Biens & Propriétés** : Inventaire de vos biens physiques
-- 🔄 **Charges récurrentes** : Suivi des revenus et charges mensuels
-- 📈 **Bourse** : Portefeuille d'actions et ETF
-- 🧮 **Simulateurs** : Projections d'épargne et emprunts
-
-### Sécurité
-
-- 🔐 Authentification JWT avec refresh tokens
-- 🔒 Chiffrement AES-256-GCM des données sensibles
-- 🛡️ Protection OWASP (rate limiting, CORS, helmet)
-- 🔑 Hash bcrypt des mots de passe (12 rounds)
-
-## Structure du projet
+## Structure
 
 ```
-Finance-App/
-├── backend/              # API Node.js + Express
-│   ├── models/          # Modèles Mongoose
-│   ├── routes/          # Routes API
-│   ├── middleware/      # Middlewares (auth, validation)
-│   ├── utils/           # Utilitaires (encryption, validators)
-│   └── server.js        # Point d'entrée
-├── frontend/            # Application React
-│   ├── src/
-│   │   ├── components/  # Composants React
-│   │   ├── services/    # Services API
-│   │   └── App.jsx      # Composant principal
-│   └── package.json
-├── start.sh            # Script de démarrage
-├── stop.sh             # Script d'arrêt
-└── README.md
+backend/
+  app.js            Application Express (testable, sans écoute de port)
+  server.js         Démarrage : validation de la config, connexion Mongo, arrêt propre
+  config/           Logger winston, connexion MongoDB, validation des variables d'env
+  middleware/       Authentification JWT, rate limiting, validation des ObjectId
+  models/           Modèles Mongoose (chiffrement dans les hooks pre('save'))
+  routes/           Routes REST (validation Joi en liste blanche)
+  utils/            Chiffrement AES-256-GCM, schémas Joi
+  scripts/          Migration de re-chiffrement
+  tests/            Tests d'intégration
+frontend/src/
+  App.jsx           Application principale (tableau de bord, transactions, catégories, enveloppes)
+  components/       Écrans dédiés (bourse, biens, récurrents, connexion…)
+  services/api.js   Client axios (refresh automatique single-flight)
+docs/               Déploiement ; archive/ = anciens documents de travail
 ```
 
-## API Endpoints
+## API
 
-### Authentification
+Toutes les routes sauf `/api/auth/*` exigent `Authorization: Bearer <accessToken>`.
 
-- `POST /api/auth/register` - Créer un compte
-- `POST /api/auth/login` - Se connecter
-- `POST /api/auth/refresh` - Renouveler le token
-- `POST /api/auth/logout` - Se déconnecter
+| Route | Méthodes |
+|---|---|
+| `/api/auth/register`, `/login`, `/refresh`, `/logout` | POST |
+| `/api/auth/me` | GET |
+| `/api/transactions` | GET (`limit` ≤ 1000, `offset`, `search`, `category`, `startDate`, `endDate`), POST |
+| `/api/transactions/batch` | POST (import CSV, 1000 lignes max) |
+| `/api/transactions/stats` | GET |
+| `/api/transactions/:id` | PUT, DELETE |
+| `/api/categories`, `/api/envelopes`, `/api/assets`, `/api/recurring`, `/api/stocks` | GET, POST ; `/:id` PUT, DELETE |
+| `/api/recurring/summary/all`, `/api/stocks/portfolio/summary` | GET |
+| `/api/stocks/prices/update` | POST `{ updates: { SYMBOLE: prix } }` |
+| `/api/settings` | GET, PUT |
+| `/health` | GET (inclut l'état de MongoDB, 503 si déconnecté) |
 
-### Ressources protégées (JWT requis)
+## Sécurité : points clés
 
-- `GET/POST/PUT/DELETE /api/transactions`
-- `GET/POST/PUT/DELETE /api/categories`
-- `GET/POST/PUT/DELETE /api/envelopes`
-- `GET/POST/PUT/DELETE /api/assets`
-- `GET/POST/PUT/DELETE /api/recurring`
-- `GET/POST/PUT/DELETE /api/stocks`
-- `GET/PUT /api/settings`
-
-## Développement
-
-### Backend
-
-```bash
-cd backend
-npm install
-npm start  # Démarre sur port 5000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev  # Démarre sur port 3000
-```
-
-## Troubleshooting
-
-### Les ports sont déjà utilisés
-
-Utilisez `./stop.sh` pour libérer les ports, ou manuellement :
-
-```bash
-# Libérer le port 3000
-lsof -ti:3000 | xargs kill -9
-
-# Libérer le port 5000
-lsof -ti:5000 | xargs kill -9
-```
-
-### MongoDB n'est pas connecté
-
-Vérifiez que MongoDB est démarré :
-
-```bash
-# Vérifier le statut
-sudo systemctl status mongod
-
-# Démarrer MongoDB
-sudo systemctl start mongod
-```
-
-### Erreur de connexion API
-
-Vérifiez les logs backend :
-
-```bash
-tail -f backend.log
-```
+- Les montants, libellés et valeurs sont chiffrés en AES-256-GCM. **Conservez `ENCRYPTION_KEY`** : sans elle, les données sont perdues.
+- Le refresh token n'est jamais accessible au JavaScript. Il est stocké haché (SHA-256) en base et change à chaque renouvellement. S'il est réutilisé (signe de vol), toutes les sessions de l'utilisateur sont révoquées.
+- Les entrées sont validées par Joi en liste blanche : `userId` et les champs inconnus sont ignorés.
 
 ## Licence
 

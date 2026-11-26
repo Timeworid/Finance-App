@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Environment variables
 .env
@@ -62,3 +61,9 @@ ssl/
 
 # Production secrets
 secrets/
+
+# Fichiers PID des scripts start/stop
+*.pid
+
+# Paramètres locaux Claude Code
+.claude/settings.local.json

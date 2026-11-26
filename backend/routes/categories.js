@@ -1,4 +1,5 @@
 const express = require('express');
+const logger = require('../config/logger');
 const router = express.Router();
 const Category = require('../models/Category');
 const Transaction = require('../models/Transaction');
@@ -8,6 +9,7 @@ const { writeLimiter } = require('../middleware/rateLimiter');
 
 // Toutes les routes nécessitent l'authentification
 router.use(authenticateToken);
+router.param('id', require('../middleware/validateObjectId'));
 
 /**
  * GET /api/categories
@@ -22,7 +24,7 @@ router.get('/', async (req, res) => {
       categories,
     });
   } catch (error) {
-    console.error('Erreur lors de la récupération des catégories:', error);
+    logger.error('Erreur lors de la récupération des catégories', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la récupération des catégories',
     });
@@ -66,7 +68,7 @@ router.post('/', writeLimiter, validate(categorySchema), async (req, res) => {
       category,
     });
   } catch (error) {
-    console.error('Erreur lors de la création de la catégorie:', error);
+    logger.error('Erreur lors de la création de la catégorie', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la création de la catégorie',
     });
@@ -117,7 +119,7 @@ router.put('/:id', writeLimiter, validate(categoryUpdateSchema), async (req, res
       category,
     });
   } catch (error) {
-    console.error('Erreur lors de la mise à jour de la catégorie:', error);
+    logger.error('Erreur lors de la mise à jour de la catégorie', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la mise à jour de la catégorie',
     });
@@ -152,7 +154,7 @@ router.delete('/:id', writeLimiter, async (req, res) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error('Erreur lors de la suppression de la catégorie:', error);
+    logger.error('Erreur lors de la suppression de la catégorie', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la suppression de la catégorie',
     });

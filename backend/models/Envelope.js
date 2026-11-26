@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { encryptNumber, decryptNumber } = require('../utils/encryption');
+const { encryptNumber, isEncrypted, toNumber } = require('../utils/encryption');
 
 const envelopeSchema = new mongoose.Schema({
   userId: {
@@ -55,7 +55,7 @@ envelopeSchema.pre('save', function() {
   // Chiffrer balance si pas déjà chiffré
   if (this.isModified('balance')) {
     const balanceStr = String(this.balance);
-    if (!balanceStr.includes(':')) {
+    if (!isEncrypted(balanceStr)) {
       this.balance = encryptNumber(this.balance);
     }
   }
@@ -63,7 +63,7 @@ envelopeSchema.pre('save', function() {
   // Chiffrer monthly si pas déjà chiffré
   if (this.isModified('monthly')) {
     const monthlyStr = String(this.monthly);
-    if (!monthlyStr.includes(':')) {
+    if (!isEncrypted(monthlyStr)) {
       this.monthly = encryptNumber(this.monthly);
     }
   }
@@ -77,12 +77,8 @@ envelopeSchema.set('toJSON', {
     delete ret._id;
 
     // Déchiffrer balance et monthly pour le JSON
-    if (ret.balance && String(ret.balance).includes(':')) {
-      ret.balance = decryptNumber(ret.balance);
-    }
-    if (ret.monthly && String(ret.monthly).includes(':')) {
-      ret.monthly = decryptNumber(ret.monthly);
-    }
+    if (ret.balance !== null && ret.balance !== undefined) ret.balance = toNumber(ret.balance);
+    if (ret.monthly !== null && ret.monthly !== undefined) ret.monthly = toNumber(ret.monthly);
   }
 });
 

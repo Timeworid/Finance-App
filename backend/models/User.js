@@ -1,17 +1,30 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+
+/**
+ * Hash SHA-256 d'un refresh token : seul le hash est stocké en base,
+ * une fuite de la base ne permet donc pas de réutiliser les sessions.
+ * (SHA-256 suffit ici : le token est un secret aléatoire à haute entropie.)
+ */
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 const refreshTokenSchema = new mongoose.Schema({
+  // Hash SHA-256 du token (jamais le token en clair)
   token: {
     type: String,
     required: true,
   },
+  // ATTENTION : pas de `expires` ici. Un index TTL sur un sous-document de tableau
+  // supprime le document PARENT (l'utilisateur entier) à l'expiration.
+  // Les sessions expirées sont purgées dans addRefreshToken().
   createdAt: {
     type: Date,
     default: Date.now,
-    expires: 604800, // 7 jours en secondes
   },
 });
+
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -74,19 +87,29 @@ userSchema.set('toJSON', {
   }
 });
 
-// Limite le nombre de refresh tokens à 5 (FIFO)
+// Enregistre le hash d'un refresh token ; garde les 5 sessions les plus récentes (FIFO)
 userSchema.methods.addRefreshToken = function(token) {
-  this.refreshTokens.push({ token });
+  // Purge des sessions expirées avant ajout
+  const threshold = Date.now() - REFRESH_TOKEN_TTL_MS;
+  this.refreshTokens = this.refreshTokens.filter(rt => rt.createdAt && rt.createdAt.getTime() > threshold);
 
-  // Garde seulement les 5 plus récents
+  this.refreshTokens.push({ token: hashToken(token) });
+
   if (this.refreshTokens.length > 5) {
     this.refreshTokens = this.refreshTokens.slice(-5);
   }
 };
 
-// Supprime un refresh token spécifique
+// Indique si le refresh token fait partie des sessions actives
+userSchema.methods.hasRefreshToken = function(token) {
+  const hashed = hashToken(token);
+  return this.refreshTokens.some(rt => rt.token === hashed);
+};
+
+// Révoque un refresh token spécifique
 userSchema.methods.removeRefreshToken = function(token) {
-  this.refreshTokens = this.refreshTokens.filter(rt => rt.token !== token);
+  const hashed = hashToken(token);
+  this.refreshTokens = this.refreshTokens.filter(rt => rt.token !== hashed);
 };
 
 module.exports = mongoose.model('User', userSchema);

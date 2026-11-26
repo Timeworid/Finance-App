@@ -1,4 +1,5 @@
 const Joi = require('joi');
+const logger = require('../config/logger');
 
 /**
  * Schémas de validation Joi pour toutes les entrées
@@ -248,12 +249,104 @@ const settingsSchema = Joi.object({
     .optional(),
 }).min(1);
 
+// ObjectId MongoDB (24 caractères hex)
+const objectId = Joi.string().pattern(/^[0-9a-fA-F]{24}$/);
+
+// Bornes communes pour les montants (évite les valeurs absurdes / Infinity)
+const money = Joi.number().min(-999999999).max(999999999);
+
+// Mise à jour d'une transaction : mêmes règles que la création, champs optionnels
+const transactionUpdateSchema = Joi.object({
+  date: Joi.date().iso(),
+  label: Joi.string().trim().min(1).max(200),
+  amount: money,
+  category: objectId.allow(null, ''),
+}).min(1);
+
+// Catégories autorisées pour les éléments récurrents (identiques au modèle)
+const RECURRING_CATEGORIES = [
+  'salaire', 'prime', 'allocation', 'pension', 'investissement', 'autre_revenu',
+  'logement', 'energie', 'internet', 'telephone', 'assurance', 'transport',
+  'abonnements', 'autre_charge',
+];
+
+// Champs d'un élément récurrent (liste blanche : userId & co. sont rejetés via stripUnknown)
+const recurringFields = {
+  name: Joi.string().trim().min(1).max(100),
+  type: Joi.string().valid('revenue', 'charge'),
+  amount: Joi.number().min(0).max(999999999),
+  frequency: Joi.string().valid('weekly', 'monthly', 'quarterly', 'yearly'),
+  category: Joi.string().valid(...RECURRING_CATEGORIES),
+  startDate: Joi.date().iso().allow(null, ''),
+  endDate: Joi.date().iso().allow(null, ''),
+  isActive: Joi.boolean(),
+  dayOfMonth: Joi.number().integer().min(1).max(31),
+  notes: Joi.string().trim().max(500).allow(''),
+};
+
+const recurringSchema = Joi.object({
+  ...recurringFields,
+  name: recurringFields.name.required(),
+  type: recurringFields.type.required(),
+  amount: recurringFields.amount.required(),
+  frequency: recurringFields.frequency.required(),
+  category: recurringFields.category.required(),
+});
+
+const recurringUpdateSchema = Joi.object(recurringFields).min(1);
+
+// Champs d'une position boursière (liste blanche)
+const stockFields = {
+  symbol: Joi.string().trim().min(1).max(20),
+  name: Joi.string().trim().min(1).max(100),
+  type: Joi.string().valid('ETF', 'ACTION', 'CRYPTO'),
+  quantity: Joi.number().min(0).max(1e12),
+  averageBuyPrice: Joi.number().min(0).max(1e12),
+  currentPrice: Joi.number().min(0).max(1e12),
+  currency: Joi.string().valid('EUR', 'USD', 'GBP'),
+  account: Joi.string().trim().max(100).allow(''),
+  sector: Joi.string().trim().max(100).allow(''),
+  region: Joi.string().trim().max(100).allow(''),
+  purchaseDate: Joi.date().iso().allow(null, ''),
+  dividendYield: Joi.number().min(0).max(100),
+  notes: Joi.string().trim().max(500).allow(''),
+};
+
+const stockSchema = Joi.object({
+  ...stockFields,
+  symbol: stockFields.symbol.required(),
+  name: stockFields.name.required(),
+  type: stockFields.type.required(),
+  quantity: stockFields.quantity.required(),
+  averageBuyPrice: stockFields.averageBuyPrice.required(),
+});
+
+const stockUpdateSchema = Joi.object(stockFields).min(1);
+
+// Mise à jour des prix : { updates: { "CW8": 512.3, ... } } — 500 symboles max
+const stockPricesSchema = Joi.object({
+  updates: Joi.object()
+    .pattern(Joi.string().trim().min(1).max(20), Joi.number().min(0).max(1e12))
+    .max(500)
+    .required(),
+});
+
+// Paramètres de liste des transactions (query string)
+const transactionQuerySchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(1000).default(400),
+  offset: Joi.number().integer().min(0).default(0),
+  category: Joi.alternatives().try(objectId, Joi.string().valid('none')),
+  search: Joi.string().trim().max(100).allow(''),
+  startDate: Joi.date().iso(),
+  endDate: Joi.date().iso(),
+});
+
 /**
  * Middleware de validation générique
  */
-const validate = (schema) => {
+const validate = (schema, source = 'body') => {
   return (req, res, next) => {
-    const { error, value } = schema.validate(req.body, {
+    const { error, value } = schema.validate(req[source] ?? {}, { // Express 5 : req.body peut être undefined
       abortEarly: false, // Retourner toutes les erreurs
       stripUnknown: true, // Supprimer les champs inconnus
     });
@@ -264,11 +357,8 @@ const validate = (schema) => {
         message: detail.message,
       }));
 
-      // Log pour debug
-      console.error('Validation error:', {
-        body: req.body,
-        errors: errors,
-      });
+      // Ne jamais journaliser req.body : il peut contenir mots de passe et montants
+      logger.warn('Validation error', { path: req.originalUrl, fields: errors.map(e => e.field) });
 
       return res.status(400).json({
         error: 'Erreur de validation',
@@ -276,8 +366,9 @@ const validate = (schema) => {
       });
     }
 
-    // Remplacer req.body par les valeurs validées
-    req.body = value;
+    // Express 5 : req.query est un getter en lecture seule → stockage dans req.validatedQuery
+    if (source === 'query') req.validatedQuery = value;
+    else req[source] = value;
     next();
   };
 };
@@ -292,5 +383,12 @@ module.exports = {
   envelopeSchema,
   envelopeUpdateSchema,
   settingsSchema,
+  transactionUpdateSchema,
+  transactionQuerySchema,
+  recurringSchema,
+  recurringUpdateSchema,
+  stockSchema,
+  stockUpdateSchema,
+  stockPricesSchema,
   validate,
 };

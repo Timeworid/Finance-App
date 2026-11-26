@@ -1,10 +1,25 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+/**
+ * Regroupe les dépendances lourdes en chunks séparés (meilleur cache navigateur).
+ * Vite 8 (Rolldown) exige une fonction : la forme objet faisait échouer le build.
+ * @param {string} id - chemin du module
+ * @returns {string|undefined} nom du chunk
+ */
+function manualChunks(id) {
+  if (!id.includes('node_modules')) return undefined;
+  if (/[\\/]node_modules[\\/](recharts|d3-|victory-vendor)/.test(id)) return 'chart-vendor';
+  if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) return 'react-vendor';
+  if (/[\\/]node_modules[\\/](axios|papaparse)[\\/]/.test(id)) return 'utils';
+  return undefined;
+}
+
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
   server: {
     port: 3000,
+    // En dev, '/api' est relayé au backend : même origine, pas de CORS, cookie SameSite=strict OK
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
@@ -14,26 +29,14 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: process.env.NODE_ENV !== 'production',
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: process.env.NODE_ENV === 'production',
-        drop_debugger: process.env.NODE_ENV === 'production',
-      },
-    },
+    // Pas de sourcemaps publiques en production (exposerait le code source)
+    sourcemap: mode !== 'production',
     rollupOptions: {
-      output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'chart-vendor': ['recharts'],
-          'utils': ['axios', 'papaparse'],
-        },
-      },
+      output: { manualChunks },
     },
     chunkSizeWarningLimit: 1000,
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom', 'recharts', 'axios'],
   },
-});
+}));

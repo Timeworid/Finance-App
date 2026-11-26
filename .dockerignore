@@ -2,7 +2,6 @@
 node_modules/
 npm-debug.log
 yarn-error.log
-package-lock.json
 yarn.lock
 
 # Environment variables
@@ -66,3 +65,12 @@ docs/
 Dockerfile*
 docker-compose*.yml
 .dockerignore
+
+# Fichiers inutiles dans les images
+backend/tests/
+backend/logs/
+**/eslint.config.js
+*.md
+.git/
+.claude/
+*.pid

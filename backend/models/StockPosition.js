@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { encryptNumber, decryptNumber } = require('../utils/encryption');
+const { encryptNumber, decryptNumber, isEncrypted, toNumber } = require('../utils/encryption');
 
 /**
  * Modèle pour les positions boursières (Actions, ETF)
@@ -91,7 +91,7 @@ stockPositionSchema.index({ userId: 1, type: 1 });
 stockPositionSchema.pre('save', function() {
   if (this.isModified('averageBuyPrice')) {
     const priceStr = String(this.averageBuyPrice);
-    if (!priceStr.includes(':')) {
+    if (!isEncrypted(priceStr)) {
       this.averageBuyPrice = encryptNumber(this.averageBuyPrice);
     }
   }
@@ -105,7 +105,7 @@ stockPositionSchema.methods.getTotalValue = function() {
 stockPositionSchema.methods.getTotalCost = function() {
   // Déchiffrer le prix si nécessaire
   let avgPriceValue = this.averageBuyPrice;
-  if (String(avgPriceValue).includes(':')) {
+  if (isEncrypted(avgPriceValue)) {
     avgPriceValue = decryptNumber(avgPriceValue);
   }
   const avgPrice = parseFloat(avgPriceValue) || 0;
@@ -131,9 +131,7 @@ stockPositionSchema.set('toJSON', {
     delete ret._id;
 
     // Déchiffrer averageBuyPrice pour le JSON
-    if (ret.averageBuyPrice && String(ret.averageBuyPrice).includes(':')) {
-      ret.averageBuyPrice = decryptNumber(ret.averageBuyPrice);
-    }
+    if (ret.averageBuyPrice !== null && ret.averageBuyPrice !== undefined) ret.averageBuyPrice = toNumber(ret.averageBuyPrice);
 
     return ret;
   }
