@@ -1,5 +1,9 @@
 const jwt = require('jsonwebtoken');
+const logger = require('../config/logger');
 const User = require('../models/User');
+
+// Algorithme imposé à la vérification : empêche toute confusion d'algorithme
+const JWT_ALGORITHMS = ['HS256'];
 
 /**
  * Middleware pour vérifier le JWT dans les requêtes
@@ -8,7 +12,8 @@ const authenticateToken = async (req, res, next) => {
   try {
     // Récupérer le token depuis le header Authorization
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Format: "Bearer TOKEN"
+    // Format attendu strict : "Bearer <token>"
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
     if (!token) {
       return res.status(401).json({
@@ -17,10 +22,10 @@ const authenticateToken = async (req, res, next) => {
     }
 
     // Vérifier et décoder le token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: JWT_ALGORITHMS });
 
     // Vérifier que l'utilisateur existe toujours
-    const user = await User.findById(decoded.userId).select('-password -refreshTokens');
+    const user = await User.findById(decoded.userId).select('-password -refreshTokens').lean();
 
     if (!user) {
       return res.status(401).json({
@@ -30,11 +35,11 @@ const authenticateToken = async (req, res, next) => {
 
     // Attacher les informations utilisateur à la requête
     req.user = {
-      userId: decoded.userId,
-      email: decoded.email,
+      userId: String(user._id),
+      email: user.email,
     };
 
-    req.userDoc = user; // Document complet si nécessaire
+    req.userDoc = user; // Objet utilisateur (lean, sans mot de passe ni tokens)
 
     next();
   } catch (error) {
@@ -51,7 +56,7 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    console.error('Erreur d\'authentification:', error);
+    logger.error('Erreur d\'authentification', { error: error.message });
     return res.status(500).json({
       error: 'Erreur lors de la vérification du token',
     });
@@ -64,14 +69,14 @@ const authenticateToken = async (req, res, next) => {
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
     if (!token) {
       return next();
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId).select('-password -refreshTokens');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: JWT_ALGORITHMS });
+    const user = await User.findById(decoded.userId).select('-password -refreshTokens').lean();
 
     if (user) {
       req.user = {
@@ -89,6 +94,7 @@ const optionalAuth = async (req, res, next) => {
 };
 
 module.exports = {
+  JWT_ALGORITHMS,
   authenticateToken,
   optionalAuth,
 };

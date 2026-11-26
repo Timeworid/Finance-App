@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { encryptNumber, decryptNumber } = require('../utils/encryption');
+const { encryptNumber, decryptNumber, isEncrypted, toNumber } = require('../utils/encryption');
 
 const settingsSchema = new mongoose.Schema({
   userId: {
@@ -31,7 +31,7 @@ settingsSchema.pre('save', function() {
   // Chiffrer startBalance si pas déjà chiffré
   if (this.isModified('startBalance')) {
     const balanceStr = String(this.startBalance);
-    if (!balanceStr.includes(':')) {
+    if (!isEncrypted(balanceStr)) {
       this.startBalance = encryptNumber(this.startBalance);
     }
   }
@@ -39,7 +39,7 @@ settingsSchema.pre('save', function() {
   // Chiffrer monthlyCapacity si pas déjà chiffré
   if (this.isModified('monthlyCapacity')) {
     const capacityStr = String(this.monthlyCapacity);
-    if (!capacityStr.includes(':')) {
+    if (!isEncrypted(capacityStr)) {
       this.monthlyCapacity = encryptNumber(this.monthlyCapacity);
     }
   }
@@ -55,12 +55,8 @@ settingsSchema.set('toJSON', {
     delete ret._id;
 
     // Déchiffrer les champs pour le JSON
-    if (ret.startBalance && String(ret.startBalance).includes(':')) {
-      ret.startBalance = decryptNumber(ret.startBalance);
-    }
-    if (ret.monthlyCapacity && String(ret.monthlyCapacity).includes(':')) {
-      ret.monthlyCapacity = decryptNumber(ret.monthlyCapacity);
-    }
+    if (ret.startBalance !== null && ret.startBalance !== undefined) ret.startBalance = toNumber(ret.startBalance);
+    if (ret.monthlyCapacity !== null && ret.monthlyCapacity !== undefined) ret.monthlyCapacity = toNumber(ret.monthlyCapacity);
   }
 });
 

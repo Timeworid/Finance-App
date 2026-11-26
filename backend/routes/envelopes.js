@@ -1,4 +1,5 @@
 const express = require('express');
+const logger = require('../config/logger');
 const router = express.Router();
 const Envelope = require('../models/Envelope');
 const { authenticateToken } = require('../middleware/auth');
@@ -7,6 +8,7 @@ const { writeLimiter } = require('../middleware/rateLimiter');
 
 // Toutes les routes nécessitent l'authentification
 router.use(authenticateToken);
+router.param('id', require('../middleware/validateObjectId'));
 
 /**
  * GET /api/envelopes
@@ -21,7 +23,7 @@ router.get('/', async (req, res) => {
       envelopes,
     });
   } catch (error) {
-    console.error('Erreur lors de la récupération des enveloppes:', error);
+    logger.error('Erreur lors de la récupération des enveloppes', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la récupération des enveloppes',
     });
@@ -54,7 +56,7 @@ router.post('/', writeLimiter, validate(envelopeSchema), async (req, res) => {
       envelope,
     });
   } catch (error) {
-    console.error('Erreur lors de la création de l\'enveloppe:', error);
+    logger.error('Erreur lors de la création de l\'enveloppe', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la création de l\'enveloppe',
     });
@@ -90,7 +92,7 @@ router.put('/:id', writeLimiter, validate(envelopeUpdateSchema), async (req, res
       envelope,
     });
   } catch (error) {
-    console.error('Erreur lors de la mise à jour de l\'enveloppe:', error);
+    logger.error('Erreur lors de la mise à jour de l\'enveloppe', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la mise à jour de l\'enveloppe',
     });
@@ -118,7 +120,7 @@ router.delete('/:id', writeLimiter, async (req, res) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error('Erreur lors de la suppression de l\'enveloppe:', error);
+    logger.error('Erreur lors de la suppression de l\'enveloppe', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la suppression de l\'enveloppe',
     });

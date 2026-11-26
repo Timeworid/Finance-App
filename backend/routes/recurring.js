@@ -2,10 +2,14 @@ const express = require('express');
 const router = express.Router();
 const RecurringItem = require('../models/RecurringItem');
 const { authenticateToken } = require('../middleware/auth');
-const { body, validationResult } = require('express-validator');
+const { writeLimiter } = require('../middleware/rateLimiter');
+const validateObjectId = require('../middleware/validateObjectId');
+const logger = require('../config/logger');
+const { validate, recurringSchema, recurringUpdateSchema } = require('../utils/validators');
 
 // Toutes les routes sont protégées
 router.use(authenticateToken);
+router.param('id', validateObjectId);
 
 /**
  * GET /api/recurring
@@ -16,7 +20,8 @@ router.get('/', async (req, res) => {
     const { type, isActive } = req.query;
     const filter = { userId: req.user.userId };
 
-    if (type) filter.type = type;
+    // Filtre typé en chaîne : empêche l'injection d'opérateurs Mongo
+    if (type === 'revenue' || type === 'charge') filter.type = type;
     if (isActive !== undefined) filter.isActive = isActive === 'true';
 
     const items = await RecurringItem.find(filter).sort({ createdAt: -1 });
@@ -27,7 +32,7 @@ router.get('/', async (req, res) => {
       total: items.length,
     });
   } catch (error) {
-    console.error('Erreur récupération éléments récurrents:', error);
+    logger.error('Erreur récupération éléments récurrents', { error: error.message });
     res.status(500).json({ error: 'Erreur lors de la récupération' });
   }
 });
@@ -36,59 +41,42 @@ router.get('/', async (req, res) => {
  * POST /api/recurring
  * Créer un nouvel élément récurrent
  */
-router.post('/',
-  [
-    body('name').trim().notEmpty().withMessage('Le nom est requis'),
-    body('type').isIn(['revenue', 'charge']).withMessage('Type invalide'),
-    body('amount').isNumeric().withMessage('Le montant doit être un nombre'),
-    body('frequency').isIn(['weekly', 'monthly', 'quarterly', 'yearly']).withMessage('Fréquence invalide'),
-    body('category').isIn([
-      'salaire', 'prime', 'allocation', 'pension', 'investissement', 'autre_revenu',
-      'logement', 'energie', 'internet', 'telephone', 'assurance', 'transport',
-      'abonnements', 'autre_charge',
-    ]).withMessage('Catégorie invalide'),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+router.post('/', writeLimiter, validate(recurringSchema), async (req, res) => {
+  try {
+    // req.body filtré par liste blanche Joi ; userId imposé côté serveur
+    const item = new RecurringItem({
+      ...req.body,
+      userId: req.user.userId,
+    });
 
-    try {
-      const item = new RecurringItem({
-        ...req.body,
-        userId: req.user.userId,
-      });
+    await item.save();
 
-      await item.save();
-
-      res.status(201).json({
-        success: true,
-        message: 'Élément créé avec succès',
-        item,
-      });
-    } catch (error) {
-      console.error('Erreur création élément:', error);
-      res.status(500).json({ error: 'Erreur lors de la création' });
-    }
+    res.status(201).json({
+      success: true,
+      message: 'Élément créé avec succès',
+      item,
+    });
+  } catch (error) {
+    logger.error('Erreur création élément', { error: error.message });
+    res.status(500).json({ error: 'Erreur lors de la création' });
   }
-);
+});
 
 /**
  * PUT /api/recurring/:id
  * Mettre à jour un élément
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', writeLimiter, validate(recurringUpdateSchema), async (req, res) => {
   try {
-    const item = await RecurringItem.findOneAndUpdate(
-      { _id: req.params.id, userId: req.user.userId },
-      { $set: req.body },
-      { new: true, runValidators: true }
-    );
+    // find + save (et non findOneAndUpdate) : déclenche le hook de chiffrement du montant
+    const item = await RecurringItem.findOne({ _id: req.params.id, userId: req.user.userId });
 
     if (!item) {
       return res.status(404).json({ error: 'Élément non trouvé' });
     }
+
+    item.set(req.body);
+    await item.save();
 
     res.json({
       success: true,
@@ -96,7 +84,7 @@ router.put('/:id', async (req, res) => {
       item,
     });
   } catch (error) {
-    console.error('Erreur mise à jour élément:', error);
+    logger.error('Erreur mise à jour élément', { error: error.message });
     res.status(500).json({ error: 'Erreur lors de la mise à jour' });
   }
 });
@@ -105,7 +93,7 @@ router.put('/:id', async (req, res) => {
  * DELETE /api/recurring/:id
  * Supprimer un élément
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', writeLimiter, async (req, res) => {
   try {
     const item = await RecurringItem.findOneAndDelete({
       _id: req.params.id,
@@ -121,13 +109,13 @@ router.delete('/:id', async (req, res) => {
       message: 'Élément supprimé avec succès',
     });
   } catch (error) {
-    console.error('Erreur suppression élément:', error);
+    logger.error('Erreur suppression élément', { error: error.message });
     res.status(500).json({ error: 'Erreur lors de la suppression' });
   }
 });
 
 /**
- * GET /api/recurring/summary
+ * GET /api/recurring/summary/all
  * Obtenir un résumé des revenus et charges récurrents
  */
 router.get('/summary/all', async (req, res) => {
@@ -185,7 +173,7 @@ router.get('/summary/all', async (req, res) => {
       summary,
     });
   } catch (error) {
-    console.error('Erreur résumé éléments récurrents:', error);
+    logger.error('Erreur résumé éléments récurrents', { error: error.message });
     res.status(500).json({ error: 'Erreur lors du calcul du résumé' });
   }
 });

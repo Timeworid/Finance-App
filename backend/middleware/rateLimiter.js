@@ -1,47 +1,61 @@
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+
+// Désactivé en environnement de test (sinon les suites de tests se bloquent)
+const skipInTest = () => process.env.NODE_ENV === 'test';
 
 /**
- * Rate limiter strict pour les routes d'authentification
- * 5 tentatives par 15 minutes
+ * Clé de limitation : l'utilisateur authentifié si disponible, sinon l'IP.
+ * Évite qu'un réseau partagé (NAT, entreprise) bloque tous ses utilisateurs.
+ * ipKeyGenerator normalise les IPv6 (regroupement /56) pour empêcher le contournement.
+ */
+const userOrIpKey = (req) => (req.user?.userId ? `user:${req.user.userId}` : ipKeyGenerator(req.ip));
+
+/**
+ * Rate limiter strict pour les routes d'authentification :
+ * 5 échecs par 15 minutes et par IP. Les connexions réussies ne sont pas comptées,
+ * pour ne pas bloquer un utilisateur légitime qui se reconnecte.
  */
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requêtes max
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
   message: {
     error: 'Trop de tentatives de connexion. Veuillez réessayer dans 15 minutes.',
   },
-  standardHeaders: true,
+  standardHeaders: 'draft-7',
   legacyHeaders: false,
-  skipSuccessfulRequests: false,
+  skipSuccessfulRequests: true,
+  skip: skipInTest,
 });
 
 /**
- * Rate limiter pour les opérations d'écriture (POST, PUT, DELETE)
- * 50 requêtes par 15 minutes
+ * Rate limiter pour les opérations d'écriture (POST, PUT, DELETE) :
+ * 200 requêtes par 15 minutes et par utilisateur.
  */
 const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50,
+  limit: 200,
   message: {
     error: 'Trop de modifications. Veuillez ralentir.',
   },
-  standardHeaders: true,
+  standardHeaders: 'draft-7',
   legacyHeaders: false,
-  skip: (req) => req.method === 'GET', // Ne pas limiter les GET
+  keyGenerator: userOrIpKey,
+  skip: (req) => req.method === 'GET' || skipInTest(),
 });
 
 /**
- * Rate limiter pour les imports CSV (plus restrictif)
- * 10 imports par heure
+ * Rate limiter pour les imports CSV : 10 imports par heure et par utilisateur.
  */
 const importLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 heure
-  max: 10,
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
   message: {
     error: 'Trop d\'imports. Veuillez attendre avant de réessayer.',
   },
-  standardHeaders: true,
+  standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: userOrIpKey,
+  skip: skipInTest,
 });
 
 module.exports = {

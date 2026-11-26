@@ -1,9 +1,21 @@
 const express = require('express');
+const logger = require('../config/logger');
 const router = express.Router();
 const Settings = require('../models/Settings');
 const { authenticateToken } = require('../middleware/auth');
 const { validate, settingsSchema } = require('../utils/validators');
 const { writeLimiter } = require('../middleware/rateLimiter');
+const { toNumber } = require('../utils/encryption');
+
+/**
+ * Sérialise les settings avec des montants DÉCHIFFRÉS
+ * (les champs du document contiennent la valeur chiffrée).
+ */
+const serializeSettings = (settings) => ({
+  startBalance: toNumber(settings.startBalance),
+  monthlyCapacity: toNumber(settings.monthlyCapacity),
+  updatedAt: settings.updatedAt,
+});
 
 // Toutes les routes nécessitent l'authentification
 router.use(authenticateToken);
@@ -27,14 +39,10 @@ router.get('/', async (req, res) => {
     }
 
     res.json({
-      settings: {
-        startBalance: settings.startBalance,
-        monthlyCapacity: settings.monthlyCapacity,
-        updatedAt: settings.updatedAt,
-      },
+      settings: serializeSettings(settings),
     });
   } catch (error) {
-    console.error('Erreur lors de la récupération des settings:', error);
+    logger.error('Erreur lors de la récupération des settings', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la récupération des settings',
     });
@@ -68,14 +76,10 @@ router.put('/', writeLimiter, validate(settingsSchema), async (req, res) => {
 
     res.json({
       message: 'Settings mis à jour',
-      settings: {
-        startBalance: settings.startBalance,
-        monthlyCapacity: settings.monthlyCapacity,
-        updatedAt: settings.updatedAt,
-      },
+      settings: serializeSettings(settings),
     });
   } catch (error) {
-    console.error('Erreur lors de la mise à jour des settings:', error);
+    logger.error('Erreur lors de la mise à jour des settings', { error: error.message });
     res.status(500).json({
       error: 'Erreur lors de la mise à jour des settings',
     });

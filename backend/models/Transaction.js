@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { encrypt, decrypt, encryptNumber, decryptNumber } = require('../utils/encryption');
+const { encrypt, decryptIfNeeded, encryptNumber, isEncrypted, toNumber } = require('../utils/encryption');
 
 const transactionSchema = new mongoose.Schema({
   userId: {
@@ -42,18 +42,35 @@ transactionSchema.index({ userId: 1, category: 1 });
 // Chiffrement avant sauvegarde
 transactionSchema.pre('save', function() {
   // Chiffrer le label s'il n'est pas déjà chiffré
-  if (this.isModified('label') && this.label && !this.label.includes(':')) {
+  if (this.isModified('label') && this.label && !isEncrypted(this.label)) {
     this.label = encrypt(this.label);
   }
 
   // Chiffrer le montant s'il n'est pas déjà chiffré
   if (this.isModified('amount')) {
     const amountStr = String(this.amount);
-    if (!amountStr.includes(':')) {
+    if (!isEncrypted(amountStr)) {
       this.amount = encryptNumber(this.amount);
     }
   }
 });
+
+/**
+ * Montant déchiffré (nombre) — à utiliser pour tout calcul côté serveur,
+ * car `this.amount` contient la valeur chiffrée.
+ * @returns {number}
+ */
+transactionSchema.methods.getAmount = function() {
+  return toNumber(this.amount);
+};
+
+/**
+ * Libellé déchiffré — à utiliser pour la recherche côté serveur.
+ * @returns {string}
+ */
+transactionSchema.methods.getLabel = function() {
+  return decryptIfNeeded(this.label) || '';
+};
 
 // Virtual pour obtenir la date au format ISO (pour le frontend)
 transactionSchema.virtual('dateISO').get(function() {
@@ -69,12 +86,9 @@ transactionSchema.set('toJSON', {
     delete ret._id;
 
     // Déchiffrer label et amount pour le JSON
-    if (ret.label && ret.label.includes(':')) {
-      ret.label = decrypt(ret.label);
-    }
-    if (ret.amount && String(ret.amount).includes(':')) {
-      ret.amount = decryptNumber(ret.amount);
-    }
+    // decryptIfNeeded/toNumber tolèrent les données historiques restées en clair
+    ret.label = decryptIfNeeded(ret.label);
+    ret.amount = toNumber(ret.amount);
 
     // Convertir la date au format YYYY-MM-DD pour le frontend
     if (ret.date) {

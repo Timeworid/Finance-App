@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { encryptNumber, decryptNumber } = require('../utils/encryption');
+const { encryptNumber, decryptNumber, isEncrypted, toNumber } = require('../utils/encryption');
 
 /**
  * Modèle pour les charges et revenus récurrents
@@ -81,7 +81,7 @@ recurringItemSchema.index({ userId: 1, isActive: 1 });
 recurringItemSchema.pre('save', function() {
   if (this.isModified('amount')) {
     const amountStr = String(this.amount);
-    if (!amountStr.includes(':')) {
+    if (!isEncrypted(amountStr)) {
       this.amount = encryptNumber(this.amount);
     }
   }
@@ -91,7 +91,7 @@ recurringItemSchema.pre('save', function() {
 recurringItemSchema.methods.getAnnualAmount = function() {
   // Déchiffrer le montant si nécessaire
   let amountValue = this.amount;
-  if (String(amountValue).includes(':')) {
+  if (isEncrypted(amountValue)) {
     amountValue = decryptNumber(amountValue);
   }
   const amount = parseFloat(amountValue) || 0;
@@ -123,9 +123,7 @@ recurringItemSchema.set('toJSON', {
     delete ret._id;
 
     // Déchiffrer amount pour le JSON
-    if (ret.amount && String(ret.amount).includes(':')) {
-      ret.amount = decryptNumber(ret.amount);
-    }
+    if (ret.amount !== null && ret.amount !== undefined) ret.amount = toNumber(ret.amount);
 
     // Convertir les dates au format YYYY-MM-DD pour le frontend
     if (ret.startDate) {

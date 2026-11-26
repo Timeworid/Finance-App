@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { encryptNumber, decryptNumber } = require('../utils/encryption');
+const { encryptNumber, decryptNumber, isEncrypted, toNumber } = require('../utils/encryption');
 
 /**
  * Modèle pour les biens physiques (voiture, immobilier, électronique, etc.)
@@ -61,14 +61,14 @@ assetSchema.index({ userId: 1, category: 1 });
 assetSchema.pre('save', function() {
   if (this.isModified('purchasePrice')) {
     const priceStr = String(this.purchasePrice);
-    if (!priceStr.includes(':')) {
+    if (!isEncrypted(priceStr)) {
       this.purchasePrice = encryptNumber(this.purchasePrice);
     }
   }
 
   if (this.isModified('currentValue')) {
     const valueStr = String(this.currentValue);
-    if (!valueStr.includes(':')) {
+    if (!isEncrypted(valueStr)) {
       this.currentValue = encryptNumber(this.currentValue);
     }
   }
@@ -83,12 +83,8 @@ assetSchema.set('toJSON', {
     delete ret._id;
 
     // Déchiffrer les montants pour le JSON
-    if (ret.purchasePrice && String(ret.purchasePrice).includes(':')) {
-      ret.purchasePrice = decryptNumber(ret.purchasePrice);
-    }
-    if (ret.currentValue && String(ret.currentValue).includes(':')) {
-      ret.currentValue = decryptNumber(ret.currentValue);
-    }
+    if (ret.purchasePrice !== null && ret.purchasePrice !== undefined) ret.purchasePrice = toNumber(ret.purchasePrice);
+    if (ret.currentValue !== null && ret.currentValue !== undefined) ret.currentValue = toNumber(ret.currentValue);
 
     return ret;
   }
