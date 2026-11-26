@@ -6,7 +6,7 @@ Application de pilotage financier personnel : transactions, budgets, enveloppes 
 |---|---|
 | Backend | Node.js 22, Express 5, MongoDB (Mongoose 9) |
 | Frontend | React 19, Vite 8, Tailwind CSS 3, Recharts |
-| Sécurité | JWT (access 15 min + refresh 7 j en cookie httpOnly avec rotation), AES-256-GCM, bcrypt, helmet, rate limiting |
+| Sécurité | JWT (access 15 min en mémoire + refresh 7 j en cookie httpOnly avec rotation), AES-256-GCM, bcrypt, helmet, rate limiting |
 | Qualité | Tests backend (`node:test` + supertest + MongoDB en mémoire), tests frontend (Vitest + Testing Library), ESLint, CI GitHub Actions |
 
 ## Démarrage rapide (développement)
@@ -92,7 +92,7 @@ Toutes les routes sauf `/api/auth/*` exigent `Authorization: Bearer <accessToken
 ## Sécurité : points clés
 
 - Les montants, libellés et valeurs sont chiffrés en AES-256-GCM. **Conservez `ENCRYPTION_KEY`** : sans elle, les données sont perdues.
-- Le refresh token n'est jamais accessible au JavaScript. Il est stocké haché (SHA-256) en base et change à chaque renouvellement. S'il est réutilisé (signe de vol), toutes les sessions de l'utilisateur sont révoquées.
+- L'access token (15 min) reste en mémoire : il n'est jamais écrit dans `localStorage`. Le refresh token vit dans un cookie httpOnly et est stocké haché (SHA-256) en base. Il change à chaque renouvellement (rotation par famille, atomique). La réutilisation d'un ancien token révoque la session ; deux onglets simultanés sont tolérés 30 s.
 - Les entrées sont validées par Joi en liste blanche : `userId` et les champs inconnus sont ignorés.
 
 ## Licence

@@ -14,8 +14,16 @@
 - 🐛 Un nom d'enveloppe vidé pendant la saisie provoquait une erreur 400.
 - 🔒 Export CSV : les formules Excel en tête de libellé sont neutralisées (injection CSV).
 
+### Sécurité
+- 🔒 **Access token en mémoire uniquement** (plus dans `localStorage`, donc inaccessible à un script XSS). Après un rechargement, la session est restaurée via le cookie httpOnly.
+- 🔒 **Refresh tokens par familles** : chaque connexion est une session indépendante. Un token ancien réutilisé révoque cette session pendant toute sa durée de vie. Deux onglets qui rafraîchissent en même temps sont tolérés pendant 30 s, au lieu de déconnecter l'utilisateur. La rotation est atomique côté MongoDB, ce qui supprime une course entre requêtes concurrentes.
+
+### Corrigé (backend)
+- 🐛 Créer un bien sans prix ni date d'achat renvoyait une erreur 400 (champs vides refusés). La validation des biens passe sur Joi et `express-validator` est retiré.
+
 ### Ajouté
-- ✅ 41 tests frontend (Vitest + Testing Library) : logique pure, caractérisation de l'application complète, non-régression de chaque bug corrigé. Ils sont exécutés en CI.
+- ✅ 47 tests frontend (Vitest + Testing Library) : logique pure, caractérisation de l'application complète, non-régression de chaque bug corrigé, session et gardes de routes. Ils sont exécutés en CI.
+- ✅ Backend : 32 tests, dont les refresh concurrents, la réutilisation après la période de grâce et les sessions multi-appareils.
 
 ## [2026-11-26] - Correctifs de sécurité, intégrité des données et déploiement
 

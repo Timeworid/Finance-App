@@ -146,3 +146,25 @@ test('/health indique l\'état de la base', async () => {
   const res = await request(app).get('/health').expect(200);
   assert.equal(res.body.database, 'connected');
 });
+
+test('biens : création avec champs facultatifs vides (formulaire) et chiffrement', async () => {
+  const res = await request(app).post('/api/assets').set(auth).send({
+    name: 'Vélo', category: 'vehicule', currentValue: '350', purchasePrice: '', purchaseDate: '', description: '',
+  }).expect(201);
+  assert.equal(res.body.currentValue, 350);
+  assert.equal(res.body.purchasePrice, 0);
+  assert.equal(res.body.purchaseDate, null);
+
+  const doc = await raw('assets').findOne({});
+  assert.ok(isEncrypted(doc.currentValue));
+
+  // Mise à jour : userId ignoré, date vidée → null, valeur rechiffrée
+  const upd = await request(app).put(`/api/assets/${res.body.id}`).set(auth)
+    .send({ currentValue: 300, purchaseDate: '', userId: '507f1f77bcf86cd799439011' }).expect(200);
+  assert.equal(upd.body.currentValue, 300);
+  const after = await raw('assets').findOne({});
+  assert.equal(String(after.userId), String(doc.userId));
+  assert.ok(isEncrypted(after.currentValue));
+
+  await request(app).post('/api/assets').set(auth).send({ name: 'X', category: 'fusée', currentValue: 1 }).expect(400);
+});
