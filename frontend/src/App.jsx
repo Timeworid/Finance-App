@@ -38,7 +38,8 @@ import {
   categoriesAPI,
   envelopesAPI,
   settingsAPI,
-  stocksAPI
+  stocksAPI,
+  authAPI
 } from "./services/api";
 
 /* ===========================================================================
@@ -442,7 +443,7 @@ const PERIODS = [
   { label: "1 an", months: 12 }, { label: "5 ans", months: 60 }, { label: "Tout", months: 0 },
 ];
 
-function Dashboard({ state, investmentProducts = [], stockPositions = [], loadingInvestments = false }) {
+function Dashboard({ state, stockPositions = [] }) {
   const { transactions, categories, envelopes, startBalance } = state;
   const catById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c])), [categories]);
 
@@ -530,9 +531,6 @@ function Dashboard({ state, investmentProducts = [], stockPositions = [], loadin
       .sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff))
       .slice(0, 6);
   }, [transactions, catById, effKey, prev]);
-
-  // Variation en % d'une valeur par rapport au mois précédent (null si non calculable).
-  const delta = (a, b) => (b ? (a - b) / Math.abs(b) : null);
 
   return (
     <div className="space-y-6">
@@ -1385,7 +1383,7 @@ function projectEnvelopes(envelopes, years) {
 
 const ENV_TYPES = ["Sécurisé", "Mixte", "Actions", "Pilotée", "Retraite", "Immobilier", "Autre"];
 
-function Envelopes({ state, dispatch, toast }) {
+function Envelopes({ state, dispatch }) {
   const { envelopes, monthlyCapacity } = state;
   const [horizon, setHorizon] = useState(20);
 
@@ -1916,7 +1914,7 @@ export default function FinancePilot() {
   const apiDispatch = useCallback(async (action) => {
     try {
       switch (action.type) {
-        case "ADD_TX":
+        case "ADD_TX": {
           const newTx = await transactionsAPI.create({
             date: action.tx.date,
             label: action.tx.label,
@@ -1925,8 +1923,9 @@ export default function FinancePilot() {
           });
           dispatch({ type: "ADD_TX", tx: newTx });
           break;
+        }
 
-        case "UPDATE_TX":
+        case "UPDATE_TX": {
           const updatedTx = await transactionsAPI.update(action.tx.id, {
             date: action.tx.date,
             label: action.tx.label,
@@ -1935,50 +1934,59 @@ export default function FinancePilot() {
           });
           dispatch({ type: "UPDATE_TX", tx: updatedTx });
           break;
+        }
 
-        case "DELETE_TX":
+        case "DELETE_TX": {
           await transactionsAPI.delete(action.id);
           dispatch(action);
           break;
+        }
 
-        case "ADD_CAT":
+        case "ADD_CAT": {
           const newCat = await categoriesAPI.create(action.cat);
           dispatch({ type: "ADD_CAT", cat: newCat });
           break;
+        }
 
-        case "UPDATE_CAT":
+        case "UPDATE_CAT": {
           const updatedCat = await categoriesAPI.update(action.cat.id, action.cat);
           dispatch({ type: "UPDATE_CAT", cat: updatedCat });
           break;
+        }
 
-        case "DELETE_CAT":
+        case "DELETE_CAT": {
           await categoriesAPI.delete(action.id);
           dispatch(action);
           break;
+        }
 
-        case "ADD_ENV":
+        case "ADD_ENV": {
           const newEnv = await envelopesAPI.create(action.env);
           dispatch({ type: "ADD_ENV", env: newEnv });
           break;
+        }
 
-        case "UPDATE_ENV":
+        case "UPDATE_ENV": {
           const updatedEnv = await envelopesAPI.update(action.env.id, action.env);
           dispatch({ type: "UPDATE_ENV", env: updatedEnv });
           break;
+        }
 
-        case "DELETE_ENV":
+        case "DELETE_ENV": {
           await envelopesAPI.delete(action.id);
           dispatch(action);
           break;
+        }
 
         case "SET_CAPACITY":
-        case "SET_START":
+        case "SET_START": {
           await settingsAPI.update({
             startBalance: action.type === "SET_START" ? action.value : undefined,
             monthlyCapacity: action.type === "SET_CAPACITY" ? action.value : undefined,
           });
           dispatch(action);
           break;
+        }
 
         default:
           // Pour les autres actions (LOAD, etc.), juste dispatch local
@@ -2020,15 +2028,23 @@ export default function FinancePilot() {
     reader.readAsText(file);
   }, []);
 
-  // Récupérer les infos utilisateur depuis localStorage
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  // Récupérer les infos utilisateur depuis localStorage (JSON corrompu toléré)
+  const user = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || '{}');
+    } catch {
+      return {};
+    }
+  }, []);
   const userEmail = user.email || 'Utilisateur';
 
   // Fonction de déconnexion
-  const handleLogout = () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
+  const handleLogout = async () => {
+    try {
+      await authAPI.logout(); // Révoque le refresh token côté serveur + nettoie la session
+    } catch {
+      /* Même en cas d'erreur réseau, la session locale est nettoyée par authAPI.logout */
+    }
     window.location.href = '/login';
   };
 

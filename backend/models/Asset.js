@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { encryptNumber, decryptNumber, isEncrypted, toNumber } = require('../utils/encryption');
+const { encryptNumber, isEncrypted, toNumber } = require('../utils/encryption');
 
 /**
  * Modèle pour les biens physiques (voiture, immobilier, électronique, etc.)

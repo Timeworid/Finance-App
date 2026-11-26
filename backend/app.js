@@ -108,7 +108,6 @@ function createApp() {
   });
 
   // Gestionnaire d'erreurs global
-  // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     // JSON malformé ou corps trop volumineux : erreurs client
     const status = err.status || err.statusCode || 500;

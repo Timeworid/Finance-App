@@ -21,7 +21,6 @@ export default function Login() {
 
       // Stocker les tokens et l'utilisateur
       localStorage.setItem('accessToken', data.accessToken);
-      localStorage.setItem('refreshToken', data.refreshToken);
       localStorage.setItem('user', JSON.stringify(data.user));
 
       // Rediriger vers le dashboard

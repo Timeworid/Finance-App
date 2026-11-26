@@ -107,7 +107,7 @@ function decrypt(ciphertext) {
     ]).toString('utf8');
   } catch (error) {
     // Ne jamais journaliser la valeur chiffrée ni la clé
-    throw new Error('Échec du déchiffrement des données');
+    throw new Error('Échec du déchiffrement des données', { cause: error });
   }
 }
 

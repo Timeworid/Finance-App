@@ -1,62 +1,79 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Même origine par défaut : proxy Vite en dev, nginx en production (voir vite.config.js / nginx.conf)
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
+/**
+ * Supprime les données de session locales.
+ * Le refresh token n'est jamais stocké côté JS : il vit dans un cookie httpOnly.
+ */
+export function clearSession() {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken'); // Nettoyage des anciennes versions
+  localStorage.removeItem('user');
+}
 
 // Instance axios avec configuration par défaut
 const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true, // Pour les cookies
+  withCredentials: true, // Envoie le cookie httpOnly de refresh
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
 // Intercepteur de requête : ajouter le token d'authentification
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('accessToken');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
+  return config;
+});
+
+/**
+ * Refresh "single-flight" : si plusieurs requêtes reçoivent un 401 en même temps,
+ * un seul appel /auth/refresh est effectué (le serveur fait tourner le refresh token,
+ * des appels concurrents invalideraient la session).
+ */
+let refreshPromise = null;
+
+function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(`${API_BASE_URL}/auth/refresh`, null, { withCredentials: true })
+      .then(({ data }) => {
+        localStorage.setItem('accessToken', data.accessToken);
+        return data.accessToken;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+// Routes pour lesquelles un 401 ne doit pas déclencher de refresh
+const NO_REFRESH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
 
 // Intercepteur de réponse : gestion du refresh token
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const isAuthRoute = NO_REFRESH_PATHS.some((p) => originalRequest?.url?.includes(p));
 
-    // Si erreur 401 et pas déjà retryé
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthRoute) {
       originalRequest._retry = true;
 
       try {
-        // Tenter de rafraîchir le token
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) {
-          throw new Error('No refresh token');
-        }
-
-        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refreshToken,
-        });
-
-        // Sauvegarder le nouveau access token
-        localStorage.setItem('accessToken', data.accessToken);
-
-        // Réessayer la requête originale avec le nouveau token
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+        const accessToken = await refreshAccessToken();
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        // Échec du refresh : déconnecter l'utilisateur
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('user');
+        // Échec du refresh : session terminée
+        clearSession();
         window.location.href = '/login';
         return Promise.reject(refreshError);
       }
@@ -88,16 +105,17 @@ export const authAPI = {
   /**
    * Rafraîchissement du token
    */
-  refresh: async (refreshToken) => {
-    const { data } = await api.post('/auth/refresh', { refreshToken });
-    return data;
-  },
+  refresh: async () => ({ accessToken: await refreshAccessToken() }),
 
   /**
    * Déconnexion
    */
   logout: async () => {
-    await api.post('/auth/logout');
+    try {
+      await api.post('/auth/logout'); // Révoque la session côté serveur
+    } finally {
+      clearSession();
+    }
   },
 
   /**
@@ -116,8 +134,23 @@ export const transactionsAPI = {
    * Récupérer toutes les transactions
    */
   getAll: async (params = {}) => {
-    const { data } = await api.get('/transactions', { params });
-    return data.transactions || [];
+    // Limite explicite : une seule page
+    if (params.limit) {
+      const { data } = await api.get('/transactions', { params });
+      return data.transactions || [];
+    }
+
+    // Sinon : récupération de toutes les pages (le serveur plafonne à 1000 par page).
+    // Avant, seules les 400 plus récentes étaient chargées.
+    const PAGE_SIZE = 1000;
+    const all = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data } = await api.get('/transactions', { params: { ...params, limit: PAGE_SIZE, offset } });
+      const page = data.transactions || [];
+      all.push(...page);
+      if (page.length < PAGE_SIZE || all.length >= (data.total ?? 0)) break;
+    }
+    return all;
   },
 
   /**
