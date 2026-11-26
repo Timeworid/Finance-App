@@ -1,5 +1,22 @@
 # Changelog
 
+## [2026-11-26] - Découpage du frontend et tests
+
+### Modifié
+- ♻️ `App.jsx` (2 160 lignes) découpé en modules. La racine passe à environ 180 lignes et le reste est réparti en 5 vues (`views/`), un hook de données (`hooks/useFinanceData`), une logique pure testée (`lib/`) et des composants UI (`components/ui.jsx`).
+- ⚡ Les éditions inline des enveloppes, de la capacité d'épargne et du solde mettent l'affichage à jour immédiatement et sont sauvegardées en différé (600 ms). Avant, chaque frappe envoyait une requête et attendait la réponse avant d'afficher.
+
+### Corrigé
+- 🐛 **L'import CSV n'enregistrait rien sur le serveur** : les transactions disparaissaient au rechargement. Elles sont désormais envoyées par lots (`/transactions/batch`) puis rechargées.
+- 🐛 **Catégories des transactions** : l'API renvoie un objet, le frontend attendait un identifiant. La répartition des dépenses, les budgets consommés et le filtre par catégorie étaient faux.
+- 🐛 Si le chargement échouait, des **données d'exemple aléatoires** s'affichaient comme si elles étaient réelles.
+- 🐛 « Recharger les données d'exemple », « Tout effacer » et « Restaurer une sauvegarde JSON » ne modifiaient que l'affichage, sans rien enregistrer. Ces actions sont retirées, et le texte « données dans ce navigateur » est corrigé.
+- 🐛 Un nom d'enveloppe vidé pendant la saisie provoquait une erreur 400.
+- 🔒 Export CSV : les formules Excel en tête de libellé sont neutralisées (injection CSV).
+
+### Ajouté
+- ✅ 41 tests frontend (Vitest + Testing Library) : logique pure, caractérisation de l'application complète, non-régression de chaque bug corrigé. Ils sont exécutés en CI.
+
 ## [2026-11-26] - Correctifs de sécurité, intégrité des données et déploiement
 
 ### Sécurité

@@ -36,6 +36,12 @@ export default defineConfig(({ mode }) => ({
     },
     chunkSizeWarningLimit: 1000,
   },
+  // Tests : Vitest + jsdom (npm test)
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.js'],
+    css: false,
+  },
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom', 'recharts', 'axios'],
   },
